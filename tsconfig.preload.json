@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.electron.json",
+    "compilerOptions": {
+        "module": "nodenext",
+        "target": "es2020"
+    },
+    "include": [
+        "electron/preload.ts"
+    ]
+}

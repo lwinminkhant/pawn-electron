@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+dist
+dist-electron
+dist-server
+.git
+.gitignore
+.env
+*.db
+drizzle/meta

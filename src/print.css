@@ -1,0 +1,253 @@
+/* ==========================================================================
+   Print — always paper-white, dark theme must not bleed into receipts
+   ========================================================================== */
+
+/* The receipt is light-only by contract, regardless of active data-theme. */
+#print-receipt {
+  --surface-canvas: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #1a1a1a;
+  --text-muted: #4a4a4a;
+  --hairline: #cccccc;
+  --hairline-strong: #888888;
+  --brass: #8a6a2f;
+  color: #000000;
+  background: #ffffff;
+}
+
+.pawn-voucher-sheet {
+  color: #000000;
+  background: #ffffff;
+}
+
+.pawn-voucher-page {
+  --voucher-page-width: 210mm;
+  --voucher-page-height: 148mm;
+  --voucher-page-padding-x: 5mm;
+  --voucher-page-padding-y: 4mm;
+  --voucher-divider-x: 285px;
+  --voucher-divider-gap: 12px;
+  width: 210mm;
+  height: 148mm;
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(var(--voucher-divider-x) - var(--voucher-page-padding-x) - var(--voucher-divider-gap)) minmax(0, 1fr);
+  column-gap: calc(var(--voucher-divider-gap) * 2);
+  align-items: start;
+  padding: var(--voucher-page-padding-y) var(--voucher-page-padding-x);
+  box-sizing: border-box;
+  font-family: "Noto Sans Myanmar", "Pyidaungsu", "Myanmar Text", sans-serif;
+}
+
+.pawn-voucher-page::after {
+  content: "";
+  position: absolute;
+  top: var(--voucher-page-padding-y);
+  bottom: var(--voucher-page-padding-y);
+  left: var(--voucher-divider-x);
+  border-left: 0.75px dotted #a6a6a6;
+  pointer-events: none;
+}
+
+.voucher-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+}
+
+.voucher-copy:first-child {
+  width: calc(var(--voucher-divider-x) - var(--voucher-page-padding-x) - var(--voucher-divider-gap));
+  max-width: calc(var(--voucher-divider-x) - var(--voucher-page-padding-x) - var(--voucher-divider-gap));
+}
+
+.voucher-copy-with-qr {
+  align-items: start;
+}
+
+.voucher-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.voucher-body-with-qr {
+  grid-template-columns: minmax(0, 1fr) 29mm;
+  column-gap: 3mm;
+  align-items: start;
+}
+
+.voucher-header {
+  margin-bottom: 3mm;
+  height: 15mm;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.voucher-header-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: top left;
+}
+
+.voucher-account-profile {
+  position: absolute;
+  top: 0.8mm;
+  right: 0;
+  max-width: 34%;
+  font-size: 7px;
+  line-height: 1.05;
+  text-align: right;
+  white-space: normal;
+}
+
+.voucher-mark {
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.voucher-shop-name {
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.voucher-shop-subtitle {
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 700;
+  margin-top: 1mm;
+}
+
+.voucher-phone {
+  font-size: 14px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.voucher-table {
+  display: grid;
+  border: 0.75px dotted #a6a6a6;
+}
+
+.voucher-row {
+  display: grid;
+  grid-template-columns: 35% 65%;
+}
+
+.voucher-row:not(:last-child) > div {
+  border-bottom: 0.75px dotted #a6a6a6;
+}
+
+.voucher-label,
+.voucher-value {
+  min-height: 6.6mm;
+  padding: 0;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1.1;
+  display: flex;
+  align-items: center;
+}
+
+.voucher-label {
+  border-right: 0.75px dotted #a6a6a6;
+  padding-left: 1.2mm;
+  padding-top: 0.4mm;
+  padding-bottom: 0.4mm;
+}
+
+.voucher-value {
+  word-break: break-word;
+  padding-left: 1.2mm;
+  padding-right: 1mm;
+  padding-top: 0.4mm;
+  padding-bottom: 0.4mm;
+  white-space: normal;
+}
+
+.voucher-qr {
+  padding-top: 0.5mm;
+  text-align: center;
+}
+
+.voucher-qr-image,
+.voucher-qr-placeholder {
+  width: 27mm;
+  height: 27mm;
+  display: block;
+  margin: 0 auto;
+}
+
+.voucher-qr-caption {
+  margin-top: 1mm;
+  font-size: 5.5px;
+  line-height: 0.95;
+}
+
+/* On-screen the receipt subtree is hidden; only visible in the print layer. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: 148mm !important;
+    overflow: hidden !important;
+  }
+
+  body > *:not(#print-receipt) {
+    display: none !important;
+  }
+
+  #print-receipt,
+  #print-receipt * {
+    color: #000000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  #print-receipt {
+    background: #ffffff !important;
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 210mm;
+    height: 148mm;
+    overflow: hidden;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  @page {
+    size: A5 landscape;
+    margin: 0;
+  }
+
+  .no-break {
+    page-break-inside: avoid;
+  }
+
+  .hide-on-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+}
