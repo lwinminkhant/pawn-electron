@@ -19,6 +19,7 @@ import {
   TR,
 } from "../components/ui";
 import { InterestVoucher } from "../components/InterestVoucher";
+import { NonGoldInterestVoucher } from "../components/NonGoldInterestVoucher";
 import { cn, formatDate, formatDateTime, formatWeight } from "../utils/format";
 import {
   loadPawnItemOverdueThresholds,
@@ -635,7 +636,12 @@ const SearchPage: React.FC<{
         }
       />
 
-      {voucherData && <InterestVoucher {...voucherData} />}
+      {voucherData &&
+        (usesGoldJewelleryStorage(voucherData.itemType) ? (
+          <InterestVoucher {...voucherData} />
+        ) : (
+          <NonGoldInterestVoucher {...voucherData} />
+        ))}
     </div>
   );
 };

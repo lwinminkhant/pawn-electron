@@ -88,17 +88,18 @@ export const PawnReceipt: React.FC<PawnReceiptProps> = (props) => {
         (props.slotNumber ? `SLOT-${props.slotNumber}` : '-');
     const codeValue =
         props.sequence != null ? `${rawCodeValue} [${props.sequence}]` : rawCodeValue;
-    const weightValue = props.showGoldDetails
-        ? `${formatMyanmarWeight(props.weight)} [ ${formatWeight(props.netWeight)}g ]`
-        : `${formatMyanmarWeight(props.weight)} [ ${formatWeight(props.weight)}g ]`;
-
     const rows: VoucherRow[] = [
         { label: 'Id', value: String(props.pawnId) },
         { label: 'Code', value: codeValue },
         { label: 'အမည်', value: props.customerName || '-' },
         { label: 'နေရပ်', value: props.customerAddress || '-' },
         { label: 'ပစ္စည်းအမည်', value: props.itemDescription || props.itemType || '-' },
-        { label: 'အလေးချိန်', value: weightValue },
+        ...(props.showGoldDetails
+            ? [{
+                label: 'အလေးချိန်',
+                value: `${formatMyanmarWeight(props.weight)} [ ${formatWeight(props.netWeight)}g ]`,
+            }]
+            : []),
         { label: 'ချေးယူငွေ', value: formatNumber(props.loanAmount) },
         { label: 'အတိုးနှုန်း', value: `${formatDecimal(props.interestRate, 2)}%` },
         { label: 'ရက်စွဲ', value: formatDate(props.pawnDate) },

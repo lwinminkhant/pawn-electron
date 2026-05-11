@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  RefreshCcw,
   Package,
   CheckCircle2,
   Sparkles,
@@ -11,14 +10,12 @@ import {
   Inbox,
 } from "lucide-react";
 import {
-  PageHeader,
   StatCard,
   Card,
   CardHeader,
   CardBody,
   Badge,
   Money,
-  Button,
   EmptyState,
   PageLoader,
   Dialog,
@@ -38,7 +35,12 @@ import {
   formatWeight,
 } from "../utils/format";
 import { getCurrentBusinessDate, useBusinessDate } from "../utils/businessDate";
-import { getCalendarDaysDue, getConfiguredDbTimeZone } from "../utils/timeZone";
+import { getCalendarDaysDue } from "../utils/timeZone";
+
+export type DashboardHeaderAction = {
+  label: string;
+  onClick: () => void;
+};
 
 interface DashboardStats {
   totalPawns: number;
@@ -134,7 +136,11 @@ const DetailField: React.FC<{
   </div>
 );
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onHeaderActionChange?: (action: DashboardHeaderAction | null) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onHeaderActionChange }) => {
   const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats>({
     totalPawns: 0,
@@ -311,34 +317,23 @@ const Dashboard: React.FC = () => {
     void loadDashboardData();
   }, [loadDashboardData]);
 
+  useEffect(() => {
+    onHeaderActionChange?.({
+      label: t('pages.dashboard.refresh'),
+      onClick: loadDashboardData,
+    });
+
+    return () => {
+      onHeaderActionChange?.(null);
+    };
+  }, [loadDashboardData, onHeaderActionChange, t]);
+
   if (loading) {
     return <PageLoader label="Loading dashboard…" />;
   }
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('nav.dashboard')}
-        title={t('pages.dashboard.title')}
-        description={getCurrentBusinessDate().toLocaleDateString("en-US", {
-          timeZone: getConfiguredDbTimeZone(),
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-        })}
-        actions={
-          <Button
-            variant="secondary"
-            size="md"
-            leadingIcon={<RefreshCcw size={14} />}
-            onClick={loadDashboardData}
-          >
-            {t('pages.dashboard.refresh')}
-          </Button>
-        }
-      />
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           accent

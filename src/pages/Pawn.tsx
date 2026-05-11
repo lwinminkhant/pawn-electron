@@ -38,6 +38,10 @@ import {
 } from "../utils/format";
 import { getCurrentBusinessDate, useBusinessDate } from "../utils/businessDate";
 import {
+  loadInterestTiersForItemType,
+  type InterestTier,
+} from "../utils/appSettings";
+import {
   DEFAULT_PAWN_ITEM_TYPES,
   loadPawnItemDescriptionPresets,
   loadPawnItemOverdueThresholds,
@@ -153,6 +157,9 @@ const Pawn: React.FC = () => {
 
   // ---------- Item ----------
   const [itemTypes, setItemTypes] = useState<string[]>(() => loadPawnItemTypes());
+  const [interestTiers, setInterestTiers] = useState<InterestTier[]>(() =>
+    loadInterestTiersForItemType(loadPawnItemTypes()[0] ?? DEFAULT_PAWN_ITEM_TYPES[0]),
+  );
   const [itemOverdueThresholds, setItemOverdueThresholds] =
     useState<PawnItemOverdueThresholds>(() =>
       loadPawnItemOverdueThresholds(loadPawnItemTypes()),
@@ -177,12 +184,13 @@ const Pawn: React.FC = () => {
   useEffect(() => {
     const refreshItemTypes = () => {
       const nextTypes = loadPawnItemTypes();
+      const nextItemType =
+        nextTypes.includes(itemType) ? itemType : nextTypes[0] ?? DEFAULT_PAWN_ITEM_TYPES[0];
       setItemTypes(nextTypes);
       setItemOverdueThresholds(loadPawnItemOverdueThresholds(nextTypes));
       setItemDescriptionPresets(loadPawnItemDescriptionPresets(nextTypes));
-      setItemType((current) =>
-        nextTypes.includes(current) ? current : nextTypes[0] ?? DEFAULT_PAWN_ITEM_TYPES[0]
-      );
+      setItemType(nextItemType);
+      setInterestTiers(loadInterestTiersForItemType(nextItemType));
     };
 
     refreshItemTypes();
@@ -192,7 +200,7 @@ const Pawn: React.FC = () => {
       window.removeEventListener("storage", refreshItemTypes);
       window.removeEventListener("pawn-item-types-updated", refreshItemTypes);
     };
-  }, []);
+  }, [itemType]);
 
   const suggestedItemDescriptions = itemDescriptionPresets[itemType] ?? [];
   const formattedWeightInput = formatNumericInputDisplay(weight, true);
@@ -359,26 +367,15 @@ const Pawn: React.FC = () => {
 
   useEffect(() => {
     const amount = parseFloat(loanAmount) || 0;
-    const savedTiers = localStorage.getItem("interestTiers");
-    let tiers = [
-      { minAmount: 0, rate: 3 },
-      { minAmount: 500001, rate: 2.5 },
-      { minAmount: 1000001, rate: 2 },
-    ];
-    if (savedTiers) {
-      try {
-        tiers = JSON.parse(savedTiers);
-        tiers.sort((a, b) => b.minAmount - a.minAmount);
-      } catch (e) {
-        console.error("Failed to parse tiers", e);
-      }
-    } else {
-      tiers.sort((a, b) => b.minAmount - a.minAmount);
-    }
+    const tiers = [...interestTiers].sort((a, b) => b.minAmount - a.minAmount);
     const match = tiers.find((t) => amount >= t.minAmount);
     if (match) setInterestRate(match.rate.toString());
     else setInterestRate("3");
-  }, [loanAmount]);
+  }, [interestTiers, loanAmount]);
+
+  useEffect(() => {
+    setInterestTiers(loadInterestTiersForItemType(itemType));
+  }, [itemType]);
 
   const [goldRate, setGoldRate] = useState(() => {
     const saved = localStorage.getItem("goldRate");
@@ -505,18 +502,15 @@ const Pawn: React.FC = () => {
       );
       if (result.success) {
         setStorageInfo(result.storageInfo);
-        setShowStorageInfo(Boolean(result.storageInfo));
         if (!result.storageInfo) {
           setStorageInfoError("No storage info returned.");
         }
       } else {
         setStorageInfo(null);
-        setShowStorageInfo(true);
         setStorageInfoError(result?.message || "Failed to load storage info.");
       }
     } catch (error) {
       setStorageInfo(null);
-      setShowStorageInfo(true);
       setStorageInfoError(
         error instanceof Error ? error.message : "Failed to load storage info."
       );
@@ -532,7 +526,6 @@ const Pawn: React.FC = () => {
 
   useEffect(() => {
     if (!usesStorage) return;
-    setShowStorageInfo(true);
     void loadStorageInfo();
   }, [businessDateYmd, loadStorageInfo, usesStorage]);
 

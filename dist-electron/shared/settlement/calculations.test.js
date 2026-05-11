@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateInterestAmountByDays, calculateInterestAmountForPeriod, calculateRedeemInterest, getElapsedMonthsAndDays, } from "./calculations";
+import { calculateInterestAmountByDays, calculateInterestAmountForPeriod, calculateRedeemInterest, getElapsedMonthsAndDays, } from "./calculations.js";
 test("calculateInterestAmountByDays prorates monthly interest by day", () => {
     assert.equal(calculateInterestAmountByDays(300_000, 3, 30), 9_000);
     assert.equal(calculateInterestAmountByDays(300_000, 3, 15), 4_500);

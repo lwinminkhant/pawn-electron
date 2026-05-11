@@ -6,9 +6,10 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "commitlint": "commitlint --edit",
+    "start": "concurrently -k \"npm run api:dev\" \"npm run dev\"",
     "dev": "vite",
-    "devdb": "npm run electron:dev",
-    "mobile:start": "npm --prefix mobile-react-native start",
+    "devdb": "v",
+    "mobile:start": "npm --prefnpm run electron:deix mobile-react-native start",
     "android": "npm --prefix mobile-react-native run android",
     "ios": "npm --prefix mobile-react-native run ios",
     "web": "npm --prefix mobile-react-native run web",

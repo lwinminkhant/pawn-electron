@@ -1,10 +1,10 @@
 import React from "react";
 import { InterestVoucherBase, type InterestVoucherProps } from "./InterestVoucherBase";
 
-export const InterestVoucher: React.FC<InterestVoucherProps> = (props) => (
+export const NonGoldInterestVoucher: React.FC<InterestVoucherProps> = (props) => (
   <InterestVoucherBase
     {...props}
-    includeWeight
-    headerAlt="Interest voucher header"
+    includeWeight={false}
+    headerAlt="Non-gold interest voucher header"
   />
 );

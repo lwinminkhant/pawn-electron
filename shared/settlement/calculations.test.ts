@@ -5,7 +5,7 @@ import {
   calculateInterestAmountForPeriod,
   calculateRedeemInterest,
   getElapsedMonthsAndDays,
-} from "./calculations";
+} from "./calculations.js";
 
 test("calculateInterestAmountByDays prorates monthly interest by day", () => {
   assert.equal(calculateInterestAmountByDays(300_000, 3, 30), 9_000);

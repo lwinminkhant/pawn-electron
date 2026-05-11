@@ -8,7 +8,6 @@ import {
   Plus,
   RefreshCcw,
   Scale,
-  Save,
   Trash2,
 } from "lucide-react";
 import {
@@ -19,7 +18,6 @@ import {
   CardHeader,
   Field,
   Input,
-  PageHeader,
   Select,
 } from "../components/ui";
 import {
@@ -37,10 +35,12 @@ import {
 import {
   DEFAULT_APP_SETTINGS,
   DEFAULT_INTEREST_TIERS,
+  loadInterestTiersForItemType,
   normalizeAppSettings,
   syncAppSettingsToLocalCache,
   type AppSettingsPayload,
   type InterestTier,
+  type InterestTierByItemType,
 } from "../utils/appSettings";
 
 const DB_TIME_ZONE_OPTIONS = [
@@ -54,17 +54,31 @@ const DB_TIME_ZONE_OPTIONS = [
   "Asia/Yangon",
 ];
 
-const Settings: React.FC = () => {
+export type SettingsHeaderAction = {
+  label: string;
+  loading: boolean;
+  onClick: () => void;
+};
+
+interface SettingsProps {
+  onHeaderActionChange?: (action: SettingsHeaderAction | null) => void;
+}
+
+const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
   const { t } = useTranslation();
-  const [tiers, setTiers] = useState<InterestTier[]>([
-    { minAmount: 0, rate: 3 },
-    { minAmount: 500001, rate: 2.5 },
-    { minAmount: 1000001, rate: 2 },
-  ]);
   const [goldRate, setGoldRate] = useState("80000");
   const [oneKyatInGrams, setOneKyatInGrams] = useState("16.606");
   const [goldPricePerKyat, setGoldPricePerKyat] = useState("");
   const [itemTypes, setItemTypes] = useState<string[]>(() => loadPawnItemTypes());
+  const [interestTiersByItemType, setInterestTiersByItemType] =
+    useState<InterestTierByItemType>(() =>
+      Object.fromEntries(
+        loadPawnItemTypes().map((itemType) => [
+          itemType,
+          loadInterestTiersForItemType(itemType),
+        ]),
+      )
+    );
   const [itemDescriptionPresets, setItemDescriptionPresets] =
     useState<PawnItemDescriptionPresets>(() =>
       loadPawnItemDescriptionPresets(loadPawnItemTypes())
@@ -95,11 +109,11 @@ const Settings: React.FC = () => {
         );
         if (cancelled) return;
         syncAppSettingsToLocalCache(normalized);
-        setTiers(normalized.interestTiers);
         setGoldRate(normalized.goldRate);
         setOneKyatInGrams(normalized.oneKyatInGrams);
         setGoldPricePerKyat(normalized.goldPricePerKyat);
         setItemTypes(normalized.itemTypes);
+        setInterestTiersByItemType(normalized.interestTiersByItemType);
         setItemDescriptionPresets(normalized.itemDescriptionPresets);
         setItemOverdueThresholds(normalized.itemOverdueThresholds);
         setFaceCameraId(normalized.faceCameraId || getStoredCameraId("face") || "");
@@ -110,8 +124,12 @@ const Settings: React.FC = () => {
       } catch (error) {
         console.error("Failed to load settings", error);
         const fallbackTypes = loadPawnItemTypes();
-        setTiers(DEFAULT_INTEREST_TIERS);
         setItemTypes(fallbackTypes);
+        setInterestTiersByItemType(
+          Object.fromEntries(
+            fallbackTypes.map((itemType) => [itemType, [...DEFAULT_INTEREST_TIERS]]),
+          ),
+        );
         setItemDescriptionPresets(loadPawnItemDescriptionPresets(fallbackTypes));
         setItemOverdueThresholds(loadPawnItemOverdueThresholds(fallbackTypes));
       }
@@ -176,9 +194,19 @@ const Settings: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const sortedTiers = [...tiers].sort((a, b) => a.minAmount - b.minAmount);
+      const sortedInterestTiersByItemType = Object.fromEntries(
+        Object.entries(interestTiersByItemType).map(([itemType, tiers]) => [
+          itemType,
+          [...tiers].sort((a, b) => a.minAmount - b.minAmount),
+        ]),
+      );
+      const firstConfiguredItemType = itemTypes.find((itemType) => itemType.trim().length > 0);
+      const legacyInterestTiers =
+        (firstConfiguredItemType && sortedInterestTiersByItemType[firstConfiguredItemType]) ||
+        [...DEFAULT_INTEREST_TIERS];
       const settingsPayload: AppSettingsPayload = normalizeAppSettings({
-        interestTiers: sortedTiers,
+        interestTiers: legacyInterestTiers,
+        interestTiersByItemType: sortedInterestTiersByItemType,
         goldRate,
         oneKyatInGrams,
         goldPricePerKyat,
@@ -211,8 +239,8 @@ const Settings: React.FC = () => {
           dbTimeZone.trim(),
       });
       syncAppSettingsToLocalCache(savedSettings);
-      setTiers(savedSettings.interestTiers);
       setItemTypes(savedSettings.itemTypes);
+      setInterestTiersByItemType(savedSettings.interestTiersByItemType);
       setItemDescriptionPresets(savedSettings.itemDescriptionPresets);
       setItemOverdueThresholds(savedSettings.itemOverdueThresholds);
       setDbTimeZone(savedSettings.dbTimeZone);
@@ -232,24 +260,56 @@ const Settings: React.FC = () => {
     }
   };
 
-  const addTier = () => {
-    setTiers([...tiers, { minAmount: 0, rate: 0 }]);
+  useEffect(() => {
+    onHeaderActionChange?.({
+      label: isSaving ? t('pages.settings.saving') : t('pages.settings.saveSettings'),
+      loading: isSaving,
+      onClick: handleSave,
+    });
+
+    return () => {
+      onHeaderActionChange?.(null);
+    };
+  }, [handleSave, isSaving, onHeaderActionChange, t]);
+
+  const ensureInterestTiersForItemType = (
+    current: InterestTierByItemType,
+    itemType: string,
+  ): InterestTier[] => current[itemType] ?? [...DEFAULT_INTEREST_TIERS];
+
+  const addTier = (itemType: string) => {
+    setInterestTiersByItemType((current) => ({
+      ...current,
+      [itemType]: [
+        ...ensureInterestTiersForItemType(current, itemType),
+        { minAmount: 0, rate: 0 },
+      ],
+    }));
   };
 
-  const removeTier = (index: number) => {
-    const newTiers = [...tiers];
-    newTiers.splice(index, 1);
-    setTiers(newTiers);
+  const removeTier = (itemType: string, index: number) => {
+    setInterestTiersByItemType((current) => ({
+      ...current,
+      [itemType]: ensureInterestTiersForItemType(current, itemType).filter(
+        (_, tierIndex) => tierIndex !== index,
+      ),
+    }));
   };
 
   const updateTier = (
+    itemType: string,
     index: number,
     field: keyof InterestTier,
     value: number
   ) => {
-    const newTiers = [...tiers];
-    newTiers[index] = { ...newTiers[index], [field]: value };
-    setTiers(newTiers);
+    setInterestTiersByItemType((current) => {
+      const nextTiers = [...ensureInterestTiersForItemType(current, itemType)];
+      nextTiers[index] = { ...nextTiers[index], [field]: value };
+      return {
+        ...current,
+        [itemType]: nextTiers,
+      };
+    });
   };
 
   const addItemType = () => {
@@ -290,6 +350,21 @@ const Settings: React.FC = () => {
       return {
         ...rest,
         [nextKey]: previousThreshold,
+      };
+    });
+
+    setInterestTiersByItemType((current) => {
+      if (!(previousKey in current)) return current;
+      const { [previousKey]: previousTiers, ...rest } = current;
+      if (!nextKey) {
+        return { ...rest, [previousKey]: previousTiers };
+      }
+      if (nextKey in rest) {
+        return rest;
+      }
+      return {
+        ...rest,
+        [nextKey]: previousTiers,
       };
     });
   };
@@ -339,6 +414,10 @@ const Settings: React.FC = () => {
       const { [key]: _removed, ...rest } = current;
       return rest;
     });
+    setInterestTiersByItemType((current) => {
+      const { [key]: _removed, ...rest } = current;
+      return rest;
+    });
   };
 
   const updateItemOverdueThreshold = (itemType: string, value: string) => {
@@ -355,23 +434,6 @@ const Settings: React.FC = () => {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader
-        eyebrow={t('pages.settings.configuration')}
-        title={t('pages.settings.settingsTitle')}
-        description={t('pages.settings.settingsDesc')}
-        actions={
-          <Button
-            type="button"
-            variant="primary"
-            leadingIcon={<Save size={14} />}
-            loading={isSaving}
-            onClick={handleSave}
-          >
-            {isSaving ? t('pages.settings.saving') : t('pages.settings.saveSettings')}
-          </Button>
-        }
-      />
-
       {message && (
         <div className="mb-6">
           <Banner tone={message.type === "success" ? "success" : "danger"}>
@@ -381,6 +443,41 @@ const Settings: React.FC = () => {
       )}
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Clock3 size={14} className="text-[var(--info)]" aria-hidden />
+              <div>
+                <h3 className="text-[14px] font-semibold tracking-tight">
+                  {t('pages.settings.databaseTimeZone')}
+                </h3>
+                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
+                  {t('pages.settings.databaseTimeZoneDesc')}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="grid grid-cols-1 gap-6">
+              <Field
+                label={t('pages.settings.timeZone')}
+                hint={t('pages.settings.chooseDatabaseTimeZone')}
+              >
+                <Select
+                  value={dbTimeZone}
+                  onChange={(e) => setDbTimeZone(e.target.value)}
+                >
+                  {DB_TIME_ZONE_OPTIONS.map((timeZone) => (
+                    <option key={timeZone} value={timeZone}>
+                      {timeZone}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </CardBody>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -443,6 +540,59 @@ const Settings: React.FC = () => {
                   ))}
                 </select>
               </Field>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Package size={14} className="text-[var(--brass)]" aria-hidden />
+                <div>
+                  <h3 className="text-[14px] font-semibold tracking-tight">
+                    {t('pages.settings.pawnItemTypes')}
+                  </h3>
+                  <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
+                    {t('pages.settings.pawnItemTypesDesc')}
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                leadingIcon={<Plus size={13} />}
+                onClick={addItemType}
+              >
+                {t('pages.settings.addType')}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardBody className="p-0">
+            <div className="divide-y divide-[var(--hairline)]">
+              {itemTypes.map((itemType, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-[1fr_auto] gap-3 px-5 py-3 items-center"
+                >
+                  <Input
+                    type="text"
+                    value={itemType}
+                    onChange={(e) => updateItemType(index, e.target.value)}
+                    placeholder={t('pages.settings.typePlaceholder')}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeItemType(index)}
+                    aria-label={t('common.remove')}
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
+              ))}
             </div>
           </CardBody>
         </Card>
@@ -597,94 +747,6 @@ const Settings: React.FC = () => {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Clock3 size={14} className="text-[var(--info)]" aria-hidden />
-              <div>
-                <h3 className="text-[14px] font-semibold tracking-tight">
-                  {t('pages.settings.databaseTimeZone')}
-                </h3>
-                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
-                  {t('pages.settings.databaseTimeZoneDesc')}
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <div className="grid grid-cols-1 gap-6">
-              <Field
-                label={t('pages.settings.timeZone')}
-                hint={t('pages.settings.chooseDatabaseTimeZone')}
-              >
-                <Select
-                  value={dbTimeZone}
-                  onChange={(e) => setDbTimeZone(e.target.value)}
-                >
-                  {DB_TIME_ZONE_OPTIONS.map((timeZone) => (
-                    <option key={timeZone} value={timeZone}>
-                      {timeZone}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Package size={14} className="text-[var(--brass)]" aria-hidden />
-                <div>
-                  <h3 className="text-[14px] font-semibold tracking-tight">
-                    {t('pages.settings.pawnItemTypes')}
-                  </h3>
-                  <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
-                    {t('pages.settings.pawnItemTypesDesc')}
-                  </p>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                leadingIcon={<Plus size={13} />}
-                onClick={addItemType}
-              >
-                {t('pages.settings.addType')}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardBody className="p-0">
-            <div className="divide-y divide-[var(--hairline)]">
-              {itemTypes.map((itemType, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-[1fr_auto] gap-3 px-5 py-3 items-center"
-                >
-                  <Input
-                    type="text"
-                    value={itemType}
-                    onChange={(e) => updateItemType(index, e.target.value)}
-                    placeholder={t('pages.settings.typePlaceholder')}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeItemType(index)}
-                    aria-label={t('common.remove')}
-                  >
-                    <Trash2 size={13} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
               <Coins size={14} className="text-[var(--brass)]" aria-hidden />
               <div>
                 <h3 className="text-[14px] font-semibold tracking-tight">
@@ -762,84 +824,113 @@ const Settings: React.FC = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-[14px] font-semibold tracking-tight">
-                  {t('pages.settings.interestRateConfiguration')}
-                </h3>
-                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
-                  {t('pages.settings.interestRateConfigDesc')}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                leadingIcon={<Plus size={13} />}
-                onClick={addTier}
-              >
-                {t('pages.settings.addTier')}
-              </Button>
+            <div>
+              <h3 className="text-[14px] font-semibold tracking-tight">
+                {t('pages.settings.interestRateConfiguration')}
+              </h3>
+              <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
+                {t('pages.settings.interestRateConfigDesc')}
+              </p>
             </div>
           </CardHeader>
           <CardBody className="p-0">
             <div className="divide-y divide-[var(--hairline)]">
-              <div className="grid grid-cols-[1fr_1fr_auto] gap-3 px-5 py-2.5 eyebrow">
-                <div>{t('pages.settings.minLoanAmount')}</div>
-                <div>{t('pages.settings.interestRate')}</div>
-                <div className="w-8 text-right">—</div>
-              </div>
-              {tiers.map((tier, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-[1fr_1fr_auto] gap-3 px-5 py-3 items-center"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] text-[var(--text-muted)] mono">
-                      &gt;
-                    </span>
-                    <Input
-                      type="number"
-                      value={tier.minAmount}
-                      onChange={(e) =>
-                        updateTier(
-                          index,
-                          "minAmount",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      monoDigits
-                    />
+              {itemTypes.map((itemType, itemTypeIndex) => {
+                const itemTypeKey = itemType.trim();
+                const hasName = itemTypeKey.length > 0;
+                const tiers = hasName
+                  ? ensureInterestTiersForItemType(interestTiersByItemType, itemTypeKey)
+                  : [];
+
+                return (
+                  <div key={`${itemTypeKey || "item-type"}-${itemTypeIndex}`} className="px-5 py-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[13px] font-semibold">
+                          {itemTypeKey || t('pages.settings.itemType', { index: itemTypeIndex + 1 })}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        leadingIcon={<Plus size={13} />}
+                        onClick={() => addTier(itemTypeKey)}
+                        disabled={!hasName}
+                      >
+                        {t('pages.settings.addTier')}
+                      </Button>
+                    </div>
+
+                    {!hasName ? (
+                      <p className="text-[12px] text-[var(--text-muted)]">
+                        {t('pages.settings.nameItemTypeBeforeSetting')}
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-[var(--hairline)] rounded-[10px] border border-[var(--hairline)]">
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-3 px-4 py-2.5 eyebrow">
+                          <div>{t('pages.settings.minLoanAmount')}</div>
+                          <div>{t('pages.settings.interestRate')}</div>
+                          <div className="w-8 text-right">—</div>
+                        </div>
+                        {tiers.map((tier, index) => (
+                          <div
+                            key={`${itemTypeKey}-${index}`}
+                            className="grid grid-cols-[1fr_1fr_auto] gap-3 px-4 py-3 items-center"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[13px] text-[var(--text-muted)] mono">
+                                &gt;
+                              </span>
+                              <Input
+                                type="number"
+                                value={tier.minAmount}
+                                onChange={(e) =>
+                                  updateTier(
+                                    itemTypeKey,
+                                    index,
+                                    "minAmount",
+                                    parseFloat(e.target.value) || 0
+                                  )
+                                }
+                                monoDigits
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                step="0.1"
+                                value={tier.rate}
+                                onChange={(e) =>
+                                  updateTier(
+                                    itemTypeKey,
+                                    index,
+                                    "rate",
+                                    parseFloat(e.target.value) || 0
+                                  )
+                                }
+                                monoDigits
+                              />
+                              <span className="text-[13px] text-[var(--text-muted)]">
+                                %
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeTier(itemTypeKey, index)}
+                              aria-label={t('common.remove')}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      step="0.1"
-                      value={tier.rate}
-                      onChange={(e) =>
-                        updateTier(
-                          index,
-                          "rate",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      monoDigits
-                    />
-                    <span className="text-[13px] text-[var(--text-muted)]">
-                      %
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeTier(index)}
-                    aria-label={t('common.remove')}
-                  >
-                    <Trash2 size={13} />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardBody>
         </Card>

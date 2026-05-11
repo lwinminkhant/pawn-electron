@@ -148,30 +148,38 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   eyebrow,
   actions,
   className,
-}) => (
-  <header
-    className={cn(
-      "flex flex-wrap items-end justify-between gap-4 pb-6 mb-6",
-      "border-b border-[var(--hairline)]",
-      className
-    )}
-  >
-    <div className="min-w-0">
-      {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
-      <h1 className="text-[22px] font-semibold text-[var(--text-primary)] tracking-tight">
-        {title}
-      </h1>
-      {description && (
-        <p className="text-[13px] text-[var(--text-secondary)] mt-1">
-          {description}
-        </p>
+}) => {
+  const hasHeaderText = Boolean(eyebrow || title || description);
+
+  return (
+    <header
+      className={cn(
+        "flex flex-wrap items-end justify-between gap-4 pb-6 mb-6",
+        "border-b border-[var(--hairline)]",
+        className
       )}
-    </div>
-    {actions && (
-      <div className="flex items-center gap-2 shrink-0">{actions}</div>
-    )}
-  </header>
-);
+    >
+      {hasHeaderText && (
+        <div className="min-w-0">
+          {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
+          {title && (
+            <h1 className="text-[22px] font-semibold text-[var(--text-primary)] tracking-tight">
+              {title}
+            </h1>
+          )}
+          {description && (
+            <p className="text-[13px] text-[var(--text-secondary)] mt-1">
+              {description}
+            </p>
+          )}
+        </div>
+      )}
+      {actions && (
+        <div className="flex items-center gap-2 shrink-0">{actions}</div>
+      )}
+    </header>
+  );
+};
 
 /* ---------- EmptyState ---------- */
 

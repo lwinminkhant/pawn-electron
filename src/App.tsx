@@ -21,16 +21,20 @@ import {
   ChevronDown,
   Languages,
   Moon,
+  RefreshCcw,
+  Save,
   Sun,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import type { DashboardHeaderAction } from "./pages/Dashboard";
 import Pawn from "./pages/Pawn";
 import Redeem from "./pages/Redeem";
 import InterestPayment from "./pages/InterestPayment";
 import Customers from "./pages/Customers";
 import Settings from "./pages/Settings";
+import type { SettingsHeaderAction } from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Users from "./pages/Users";
 import SearchPage from "./pages/Search";
@@ -166,6 +170,10 @@ function App() {
   );
   const { t, i18n } = useTranslation();
   const [theme, setThemeState] = useState<Theme>(() => getStoredTheme());
+  const [dashboardHeaderAction, setDashboardHeaderAction] =
+    useState<DashboardHeaderAction | null>(null);
+  const [settingsHeaderAction, setSettingsHeaderAction] =
+    useState<SettingsHeaderAction | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const businessDateYmd = useBusinessDate();
   const isAdmin = user?.level === "Admin";
@@ -231,10 +239,12 @@ function App() {
   }, [navCollapsed]);
 
   const handleLogin = (nextUser: AppUser) => {
+    setProfileMenuOpen(false);
     setUser(nextUser);
   };
 
   const handleLogout = () => {
+    setProfileMenuOpen(false);
     setUser(null);
   };
 
@@ -292,6 +302,12 @@ function App() {
 
     setTitleTicketId("");
     setTicketError(false);
+    if (page !== "dashboard") {
+      setDashboardHeaderAction(null);
+    }
+    if (page !== "settings") {
+      setSettingsHeaderAction(null);
+    }
     setCurrentPage(page);
   };
 
@@ -383,7 +399,7 @@ function App() {
   const renderPage = () => {
     switch (currentPage) {
       case "dashboard":
-        return <Dashboard />;
+        return <Dashboard onHeaderActionChange={setDashboardHeaderAction} />;
       case "pawn":
         return <Pawn />;
       case "redeem":
@@ -405,7 +421,11 @@ function App() {
       case "reports":
         return isAdmin ? <Reports /> : <Dashboard />;
       case "settings":
-        return isAdmin ? <Settings /> : <Dashboard />;
+        return isAdmin ? (
+          <Settings onHeaderActionChange={setSettingsHeaderAction} />
+        ) : (
+          <Dashboard />
+        );
       case "users":
         return isAdmin ? <Users /> : <Dashboard />;
       default:
@@ -513,7 +533,10 @@ function App() {
 
       {/* Top bar */}
       <header
-        className="border-b border-[var(--hairline)] bg-[var(--surface-raised)]/80 backdrop-blur-md flex items-center justify-between px-6 gap-4"
+        className={cn(
+          "relative border-b border-[var(--hairline)] bg-[var(--surface-raised)]/80 backdrop-blur-md flex items-center justify-between px-6 gap-4",
+          profileMenuOpen && "z-[70]",
+        )}
         style={{ gridColumn: 2 }}
       >
         <div className="flex items-center gap-2 min-w-0 shrink">
@@ -622,6 +645,29 @@ function App() {
           </div>
         )}
         <div className="flex items-center gap-2 min-w-0 shrink-0">
+          {currentPage === "dashboard" && dashboardHeaderAction && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              leadingIcon={<RefreshCcw size={14} />}
+              onClick={dashboardHeaderAction.onClick}
+            >
+              {dashboardHeaderAction.label}
+            </Button>
+          )}
+          {currentPage === "settings" && settingsHeaderAction && (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              leadingIcon={<Save size={14} />}
+              loading={settingsHeaderAction.loading}
+              onClick={settingsHeaderAction.onClick}
+            >
+              {settingsHeaderAction.label}
+            </Button>
+          )}
           <div className="flex items-center gap-1.5 h-8 px-2 rounded-[8px] border border-[var(--hairline)] bg-[var(--surface-canvas)]">
             <CalendarDays
               size={13}
@@ -661,12 +707,15 @@ function App() {
           )}
           <div
             ref={profileMenuRef}
-            className="ml-2 pl-2 border-l border-[var(--hairline)] relative"
+            className={cn(
+              "ml-2 pl-2 border-l border-[var(--hairline)] relative",
+              profileMenuOpen && "z-[70]",
+            )}
           >
             <button
               type="button"
               onClick={() => setProfileMenuOpen((open) => !open)}
-              className="flex items-center gap-3 min-w-0 rounded-[8px] px-2 py-1.5 hover:bg-[var(--surface-hover)] transition-colors"
+              className="flex items-center gap-2 min-w-0 rounded-[8px] px-2 py-1.5 hover:bg-[var(--surface-hover)] transition-colors"
               aria-haspopup="menu"
               aria-expanded={profileMenuOpen}
             >
@@ -676,7 +725,7 @@ function App() {
               >
                 {user.name?.charAt(0)?.toUpperCase() ?? "U"}
               </div>
-              <div className="min-w-0 leading-tight hidden sm:block text-left">
+              <div className="min-w-0 leading-tight hidden text-left">
                 <div className="text-[13px] font-medium truncate">
                   {user.name}
                 </div>
@@ -694,7 +743,7 @@ function App() {
             </button>
             {profileMenuOpen && (
               <div
-                className="absolute right-0 top-[calc(100%+8px)] z-30 w-56 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-canvas)] shadow-[var(--shadow-lg)] p-1.5"
+                className="absolute right-0 top-[calc(100%+8px)] z-[70] w-56 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-canvas)] shadow-[var(--shadow-lg)] p-1.5"
                 role="menu"
               >
                 <button
@@ -703,11 +752,17 @@ function App() {
                   className="w-full flex items-center justify-between gap-3 rounded-[8px] px-3 py-2 text-[13px] text-left text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors"
                   role="menuitem"
                 >
-                  <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex min-w-0 items-center gap-2">
                     <Languages size={14} className="text-[var(--text-muted)]" />
                     Language
                   </span>
-                  <span className="mono text-[12px] text-[var(--text-muted)]">
+                  <span
+                    lang={i18n.language === "en" ? "my" : "en"}
+                    className={cn(
+                      "shrink-0 text-[12px] text-[var(--text-muted)]",
+                      i18n.language === "en" ? "myanmar" : "mono",
+                    )}
+                  >
                     {i18n.language === "en" ? "မြန်မာ" : "EN"}
                   </span>
                 </button>

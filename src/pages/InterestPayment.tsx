@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Eye, Minus, Plus, Printer, Trash2 } from "lucide-react";
 import { InterestVoucher } from "../components/InterestVoucher";
+import { NonGoldInterestVoucher } from "../components/NonGoldInterestVoucher";
 import {
   Banner,
   Button,
@@ -34,6 +35,7 @@ import {
   getConfiguredDbTimeZone,
   setConfiguredDbTimeZone,
 } from "../utils/timeZone";
+import { usesGoldJewelleryStorage } from "../utils/storageUtils";
 import {
   clearSettlementCart,
   getSettlementCartIds,
@@ -744,7 +746,11 @@ const InterestPayment: React.FC = () => {
               <Money amount={voucherData.amountPaid} size="md" strong />
             </div>
           </Dialog>
-          <InterestVoucher {...voucherData} />
+          {usesGoldJewelleryStorage(voucherData.itemType) ? (
+            <InterestVoucher {...voucherData} />
+          ) : (
+            <NonGoldInterestVoucher {...voucherData} />
+          )}
         </>
       )}
     </div>

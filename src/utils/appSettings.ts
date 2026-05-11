@@ -1,5 +1,6 @@
 import {
   DEFAULT_PAWN_ITEM_TYPES,
+  loadPawnItemTypes,
   normalizePawnItemDescriptionPresets,
   normalizePawnItemOverdueThresholds,
   normalizePawnItemTypes,
@@ -9,6 +10,7 @@ import {
 import { setConfiguredDbTimeZone } from "./timeZone";
 
 const INTEREST_TIERS_KEY = "interestTiers";
+const INTEREST_TIERS_BY_ITEM_TYPE_KEY = "interestTiersByItemType";
 const GOLD_RATE_KEY = "goldRate";
 const ONE_KYAT_IN_GRAMS_KEY = "oneKyatInGrams";
 const GOLD_PRICE_PER_KYAT_KEY = "goldPricePerKyat";
@@ -23,8 +25,11 @@ export type InterestTier = {
   rate: number;
 };
 
+export type InterestTierByItemType = Record<string, InterestTier[]>;
+
 export type AppSettingsPayload = {
   interestTiers: InterestTier[];
+  interestTiersByItemType: InterestTierByItemType;
   goldRate: string;
   oneKyatInGrams: string;
   goldPricePerKyat: string;
@@ -44,6 +49,9 @@ export const DEFAULT_INTEREST_TIERS: InterestTier[] = [
 
 export const DEFAULT_APP_SETTINGS: AppSettingsPayload = {
   interestTiers: DEFAULT_INTEREST_TIERS,
+  interestTiersByItemType: Object.fromEntries(
+    DEFAULT_PAWN_ITEM_TYPES.map((itemType) => [itemType, [...DEFAULT_INTEREST_TIERS]]),
+  ),
   goldRate: "80000",
   oneKyatInGrams: "16.606",
   goldPricePerKyat: "",
@@ -82,6 +90,44 @@ const normalizeInterestTiers = (value: unknown): InterestTier[] => {
   return normalized.length > 0 ? normalized : [...DEFAULT_INTEREST_TIERS];
 };
 
+const normalizeInterestTiersByItemType = (
+  value: unknown,
+  itemTypes: string[],
+  fallbackTiers: InterestTier[],
+): InterestTierByItemType => {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const entries = new Map<string, InterestTier[]>();
+
+  for (const [key, tiers] of Object.entries(raw)) {
+    if (typeof key !== "string") continue;
+    const trimmedKey = key.trim();
+    if (!trimmedKey) continue;
+    entries.set(trimmedKey.toLowerCase(), normalizeInterestTiers(tiers));
+  }
+
+  const result: InterestTierByItemType = {};
+
+  for (const itemType of itemTypes) {
+    result[itemType] = entries.get(itemType.toLowerCase()) ?? [...fallbackTiers];
+  }
+
+  for (const [normalizedKey, tiers] of entries.entries()) {
+    const alreadyIncluded = itemTypes.some(
+      (itemType) => itemType.toLowerCase() === normalizedKey,
+    );
+    if (alreadyIncluded) continue;
+    const originalKey =
+      Object.keys(raw).find((key) => key.trim().toLowerCase() === normalizedKey)?.trim() ??
+      normalizedKey;
+    result[originalKey] = tiers;
+  }
+
+  return result;
+};
+
 const normalizeString = (value: unknown, fallback = "") =>
   typeof value === "string" ? value : fallback;
 
@@ -93,6 +139,7 @@ export const normalizeAppSettings = (
       ? (value as Record<string, unknown>)
       : {};
   const itemTypes = normalizePawnItemTypes(raw.itemTypes);
+  const interestTiers = normalizeInterestTiers(raw.interestTiers);
   const goldRate = normalizeString(raw.goldRate, DEFAULT_APP_SETTINGS.goldRate);
   const oneKyatInGrams = normalizeString(
     raw.oneKyatInGrams,
@@ -109,7 +156,12 @@ export const normalizeAppSettings = (
     })();
 
   return {
-    interestTiers: normalizeInterestTiers(raw.interestTiers),
+    interestTiers,
+    interestTiersByItemType: normalizeInterestTiersByItemType(
+      raw.interestTiersByItemType,
+      itemTypes,
+      interestTiers,
+    ),
     goldRate,
     oneKyatInGrams,
     goldPricePerKyat,
@@ -132,6 +184,10 @@ export const syncAppSettingsToLocalCache = (settings: AppSettingsPayload) => {
   window.localStorage.setItem(
     INTEREST_TIERS_KEY,
     JSON.stringify(settings.interestTiers),
+  );
+  window.localStorage.setItem(
+    INTEREST_TIERS_BY_ITEM_TYPE_KEY,
+    JSON.stringify(settings.interestTiersByItemType),
   );
   window.localStorage.setItem(GOLD_RATE_KEY, settings.goldRate);
   window.localStorage.setItem(ONE_KYAT_IN_GRAMS_KEY, settings.oneKyatInGrams);
@@ -165,4 +221,37 @@ export const syncAppSettingsToLocalCache = (settings: AppSettingsPayload) => {
   window.localStorage.removeItem("overdueDefaultDays");
   setConfiguredDbTimeZone(settings.dbTimeZone);
   window.dispatchEvent(new Event("pawn-item-types-updated"));
+};
+
+export const loadInterestTiersForItemType = (itemType: string): InterestTier[] => {
+  const normalizedItemTypes = normalizePawnItemTypes(loadPawnItemTypes());
+  const savedGlobalTiers = window.localStorage.getItem(INTEREST_TIERS_KEY);
+  let fallbackTiers = [...DEFAULT_INTEREST_TIERS];
+  if (savedGlobalTiers) {
+    try {
+      fallbackTiers = normalizeInterestTiers(JSON.parse(savedGlobalTiers));
+    } catch {
+      fallbackTiers = [...DEFAULT_INTEREST_TIERS];
+    }
+  }
+  const savedByItemType = window.localStorage.getItem(INTEREST_TIERS_BY_ITEM_TYPE_KEY);
+
+  if (!savedByItemType) {
+    return [...fallbackTiers];
+  }
+
+  try {
+    const normalized = normalizeInterestTiersByItemType(
+      JSON.parse(savedByItemType),
+      normalizedItemTypes,
+      fallbackTiers,
+    );
+
+    const match = Object.entries(normalized).find(
+      ([key]) => key.trim().toLowerCase() === itemType.trim().toLowerCase(),
+    );
+    return [...(match?.[1] ?? fallbackTiers)];
+  } catch {
+    return [...fallbackTiers];
+  }
 };
