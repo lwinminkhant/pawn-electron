@@ -34,10 +34,13 @@ export const calculateInterestAmountForPeriod = (principal, interestRate, from, 
     const monthlyInterest = principal * (interestRate / 100);
     return Math.round(monthlyInterest * months + (monthlyInterest / 30) * days);
 };
-export const calculateRedeemInterest = (principal, interestRate, lastPaymentDate, createdAt, now = new Date()) => {
+export const calculateRedeemInterest = (principal, interestRate, lastPaymentDate, createdAt, now = new Date(), hasPriorInterestPayment = Boolean(lastPaymentDate)) => {
     const baseSource = lastPaymentDate || createdAt || now;
     const { months, days } = getElapsedMonthsAndDays(baseSource, now);
     const monthlyInterest = Math.round(principal * (interestRate / 100));
+    // Redeem only: if no interest was ever paid, collect the first month in full.
+    if (!hasPriorInterestPayment && months === 0)
+        return monthlyInterest;
     if (months === 0 && days === 0)
         return monthlyInterest;
     return calculateInterestAmountForPeriod(principal, interestRate, baseSource, now);

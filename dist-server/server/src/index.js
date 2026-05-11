@@ -85,6 +85,7 @@ const getExistingPawnCountForDate = async (currentDate, executor = db) => {
 const PRINCIPAL_IN_TRANSACTION_TYPES = ['PAWN', 'PLUS_AMOUNT'];
 const PRINCIPAL_OUT_TRANSACTION_TYPES = ['MINUS_AMOUNT', 'REDEEM_BA'];
 const REDEMPTION_TRANSACTION_TYPES = ['REDEEM_BA', 'REDEEM_I'];
+const PAID_INTEREST_TRANSACTION_TYPE = 'PAID_INTEREST';
 const resolveStoredLocation = (row) => {
     if (!usesGoldJewelleryStorage(row.itemType)) {
         return {
@@ -204,6 +205,27 @@ const redemptionTotalsByPawnId = async (executor = db, pawnIds) => {
     }
     return map;
 };
+const interestPaymentPresenceByPawnId = async (executor = db, pawnIds) => {
+    const conditions = [eq(cashTransactions.type, PAID_INTEREST_TRANSACTION_TYPE)];
+    if (pawnIds && pawnIds.length > 0) {
+        conditions.push(inArray(cashTransactions.pawnFk, pawnIds));
+    }
+    const rows = await executor
+        .select({
+        pawnId: cashTransactions.pawnFk,
+        paymentCount: count(cashTransactions.id),
+    })
+        .from(cashTransactions)
+        .where(and(...conditions))
+        .groupBy(cashTransactions.pawnFk);
+    const map = new Map();
+    for (const row of rows) {
+        if (!row.pawnId)
+            continue;
+        map.set(row.pawnId, Number(row.paymentCount || 0) > 0);
+    }
+    return map;
+};
 const getEffectivePawnStatus = (itemStatus, redeemedPrincipal) => {
     if (redeemedPrincipal > 0)
         return 'REDEEMED';
@@ -233,6 +255,7 @@ const loadPawnStates = async (executor, pawnIds) => {
         .where(inArray(pawns.id, pawnIds));
     const principalMap = await currentPrincipalByPawnId(executor, pawnIds);
     const redemptionMap = await redemptionTotalsByPawnId(executor, pawnIds);
+    const interestPaymentMap = await interestPaymentPresenceByPawnId(executor, pawnIds);
     const map = new Map();
     for (const row of rows) {
         const pawnId = Number(row.pawnId);
@@ -246,6 +269,7 @@ const loadPawnStates = async (executor, pawnIds) => {
             maxAvailableAmount: Number(row.maxAvailableAmount || row.loanAmount || 0),
             lastPaymentDate: row.lastPaymentDate ? new Date(row.lastPaymentDate) : null,
             createdAt: row.createdAt ? new Date(row.createdAt) : null,
+            hasInterestPayments: interestPaymentMap.get(pawnId) ?? false,
             currentPrincipal: Number(principalMap.get(pawnId) ?? row.loanAmount ?? 0),
             effectiveStatus: getEffectivePawnStatus(row.itemStatus, redeemedPrincipal),
         });
@@ -406,12 +430,14 @@ app.get('/pawns', async (req, res) => {
         .leftJoin(cashTransactions, and(eq(cashTransactions.pawnFk, pawns.id), eq(cashTransactions.type, 'PAWN')));
     const principalMap = await currentPrincipalByPawnId();
     const redemptionMap = await redemptionTotalsByPawnId();
+    const interestPaymentMap = await interestPaymentPresenceByPawnId();
     const normalizedRows = rows.map((row) => {
         const redemption = redemptionMap.get(row.id);
         return {
             ...resolveStoredLocation(row),
             status: getEffectivePawnStatus(row.status, redemption?.redeemedPrincipal ?? 0),
             loanAmount: Number(principalMap.get(row.id) ?? row.loanAmount ?? 0),
+            hasInterestPayments: interestPaymentMap.get(row.id) ?? false,
             redeemedAt: redemption?.redeemedAt?.toISOString(),
             redeemedInterest: redemption?.redeemedInterest ?? 0,
             redeemedPrincipal: redemption?.redeemedPrincipal ?? 0,
@@ -474,6 +500,7 @@ app.get('/pawns/:id', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Ticket is not active' });
         }
         const principalMap = await currentPrincipalByPawnId(db, [id]);
+        const interestPaymentMap = await interestPaymentPresenceByPawnId(db, [id]);
         const timeZone = getDatabaseSessionTimeZone();
         const businessDate = getRequestBusinessDate(req);
         const currentPrincipal = Number(principalMap.get(row.id) ?? row.loanAmount ?? 0);
@@ -485,6 +512,7 @@ app.get('/pawns/:id', async (req, res) => {
                 ...resolveStoredLocation(row),
                 status: effectiveStatus,
                 loanAmount: currentPrincipal,
+                hasInterestPayments: interestPaymentMap.get(row.id) ?? false,
                 daysDue,
                 currentInterestDue: calculateInterestAmountForPeriod(currentPrincipal, Number(row.interestRate || 0), baseDate, businessDate),
                 redeemedAt: redeemedAt?.toISOString(),
@@ -949,7 +977,7 @@ app.post('/pawns/batch/redeem', async (req, res) => {
             if (!pawn.itemId) {
                 throw new Error(`Ticket #${ticket.pawnId} item not found`);
             }
-            const interestDue = calculateRedeemInterest(pawn.currentPrincipal, pawn.interestRate, pawn.lastPaymentDate, pawn.createdAt, businessDate);
+            const interestDue = calculateRedeemInterest(pawn.currentPrincipal, pawn.interestRate, pawn.lastPaymentDate, pawn.createdAt, businessDate, pawn.hasInterestPayments);
             if (ticket.discountAmount > interestDue) {
                 throw new Error(`Ticket #${ticket.pawnId} discount cannot be greater than interest due`);
             }
@@ -1092,7 +1120,15 @@ app.post('/pawns/:id/redeem', async (req, res) => {
         const businessDate = getRequestBusinessDate(req);
         const transactionDate = getRequestTransactionDate(req);
         const pawnRows = await db
-            .select({ id: pawns.id, itemId: items.id, status: items.status, loanAmount: cashTransactions.amount })
+            .select({
+            id: pawns.id,
+            itemId: items.id,
+            status: items.status,
+            loanAmount: cashTransactions.amount,
+            interestRate: pawns.interestRate,
+            lastPaymentDate: pawns.lastPaymentDate,
+            createdAt: cashTransactions.date,
+        })
             .from(pawns)
             .leftJoin(items, eq(pawns.itemFk, items.id))
             .leftJoin(cashTransactions, and(eq(cashTransactions.pawnFk, pawns.id), eq(cashTransactions.type, 'PAWN')))
@@ -1113,18 +1149,27 @@ app.post('/pawns/:id/redeem', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Item not found' });
         const principalMap = await currentPrincipalByPawnId();
         const loanAmount = Number(principalMap.get(pawnId) ?? pawn.loanAmount ?? 0);
+        const hasInterestPayments = (await interestPaymentPresenceByPawnId(db, [pawnId])).get(pawnId) ?? false;
+        const expectedInterestAmount = calculateRedeemInterest(loanAmount, Number(pawn.interestRate || 0), pawn.lastPaymentDate, pawn.createdAt, businessDate, hasInterestPayments);
         const numericTotal = Number(totalAmount);
         if (!Number.isFinite(numericTotal) || numericTotal < 0) {
             return res.status(400).json({ success: false, message: 'Invalid total amount' });
         }
-        const rawInterestAmount = Math.max(0, numericTotal - loanAmount);
         const appliedDiscount = Math.max(0, Number(discountAmount) || 0);
-        if (appliedDiscount > rawInterestAmount) {
+        if (appliedDiscount > expectedInterestAmount) {
             return res.status(400).json({
                 success: false,
-                message: `Discount cannot be greater than interest (${rawInterestAmount.toLocaleString()} MMK).`,
+                message: `Discount cannot be greater than interest (${expectedInterestAmount.toLocaleString()} MMK).`,
             });
         }
+        const expectedTotal = loanAmount + expectedInterestAmount - appliedDiscount;
+        if (numericTotal !== expectedTotal) {
+            return res.status(400).json({
+                success: false,
+                message: 'Total amount does not match current redeem amount',
+            });
+        }
+        const rawInterestAmount = expectedInterestAmount;
         await db.transaction(async (tx) => {
             await tx.update(items).set({ status: 'REDEEMED' }).where(eq(items.id, pawn.itemId));
             await tx.insert(cashTransactions).values({
@@ -1283,6 +1328,7 @@ app.get('/customers', async (_req, res) => {
             phone: customers.phone,
             address: customers.address,
             nrcDescription: customers.description,
+            remark: customers.remark,
             photo: customers.photo,
             faceDescriptor: customers.faceDescriptor,
         }).from(customers);
@@ -1294,6 +1340,7 @@ app.get('/customers', async (_req, res) => {
                 phone: row.phone || undefined,
                 address: row.address || undefined,
                 nrc: row.nrcDescription?.startsWith('NRC: ') ? row.nrcDescription.slice(5) : undefined,
+                remark: row.remark || undefined,
                 photo: row.photo || undefined,
                 faceDescriptor: row.faceDescriptor || undefined,
             })),
@@ -1308,7 +1355,7 @@ app.put('/customers/:id', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0)
         return res.status(400).json({ success: false, message: 'Invalid customer id' });
-    const { name, phone, nrc, address, photo, faceDescriptor } = req.body ?? {};
+    const { name, phone, nrc, address, remark, photo, faceDescriptor } = req.body ?? {};
     if (!name || name.trim().length === 0) {
         return res.status(400).json({ success: false, message: 'Customer name is required' });
     }
@@ -1368,6 +1415,7 @@ app.put('/customers/:id', async (req, res) => {
             phone: phone ? phone.trim() : null,
             address: address ? address.trim() : '',
             description: nrc ? `NRC: ${nrc.trim()}` : null,
+            remark: typeof remark === 'string' && remark.trim().length > 0 ? remark.trim() : null,
         };
         if (customerPhoto !== undefined) {
             updateFields.photo = customerPhoto;
@@ -1851,6 +1899,7 @@ const ensureDbReady = async () => {
         )
     `);
     await db.execute(sql `ALTER TABLE customers ADD COLUMN IF NOT EXISTS photo text`);
+    await db.execute(sql `ALTER TABLE customers ADD COLUMN IF NOT EXISTS remark text`);
     await db.execute(sql `ALTER TABLE customers ADD COLUMN IF NOT EXISTS face_descriptor text`);
     await db.execute(sql `
         CREATE TABLE IF NOT EXISTS items (

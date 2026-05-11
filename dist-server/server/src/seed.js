@@ -19,7 +19,8 @@ async function ensureTablesExist() {
             name text NOT NULL,
             address text NOT NULL,
             phone text,
-            description text
+            description text,
+            remark text
         )
     `);
     await db.execute(sql `

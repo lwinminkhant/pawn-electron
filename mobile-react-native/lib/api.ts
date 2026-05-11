@@ -133,6 +133,7 @@ export type PawnRow = {
     status: PawnStatus;
     createdAt: string | null;
     lastPaymentDate: string | null;
+    hasInterestPayments?: boolean;
 };
 
 export type Customer = {

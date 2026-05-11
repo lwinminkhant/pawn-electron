@@ -2,6 +2,7 @@ const MYANMAR_TO_ENGLISH_DIGITS: Record<string, string> = {
     '၀': '0', '၁': '1', '၂': '2', '၃': '3', '၄': '4',
     '၅': '5', '၆': '6', '၇': '7', '၈': '8', '၉': '9',
 };
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const toEnglishDigits = (value: string): string =>
     value.replace(/[၀-၉]/g, (d) => MYANMAR_TO_ENGLISH_DIGITS[d] ?? d);
@@ -63,4 +64,55 @@ export const calculateInterestByDays = (
 ): number => {
     const daily = (Number(loanAmount) || 0) * ((Number(monthlyRatePercent) || 0) / 100) / 30;
     return Math.max(0, Math.round(daily * Math.max(0, days)));
+};
+
+const startOfUtcDay = (value: Date | string | number) => {
+    const date = value instanceof Date ? value : new Date(value);
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+};
+
+const addUtcMonths = (value: Date, months: number) =>
+    new Date(Date.UTC(
+        value.getUTCFullYear(),
+        value.getUTCMonth() + months,
+        value.getUTCDate(),
+    ));
+
+const getElapsedMonthsAndDays = (
+    from: Date | string | number,
+    to: Date | string | number,
+) => {
+    const start = startOfUtcDay(from);
+    const end = startOfUtcDay(to);
+    if (end.getTime() <= start.getTime()) return { months: 0, days: 0 };
+
+    let months = 0;
+    let cursor = start;
+    while (true) {
+        const next = addUtcMonths(cursor, 1);
+        if (next.getTime() > end.getTime()) break;
+        cursor = next;
+        months += 1;
+    }
+
+    const days = Math.floor((end.getTime() - cursor.getTime()) / DAY_MS);
+    return { months, days };
+};
+
+export const calculateRedeemInterest = (
+    loanAmount: number,
+    monthlyRatePercent: number,
+    lastPaymentDate?: Date | string | null,
+    createdAt?: Date | string | null,
+    now = new Date(),
+) => {
+    const baseSource = lastPaymentDate || createdAt || now;
+    const { months, days } = getElapsedMonthsAndDays(baseSource, now);
+    const monthlyInterest = Math.round((Number(loanAmount) || 0) * ((Number(monthlyRatePercent) || 0) / 100));
+    const hasPriorInterestPayment = Boolean(lastPaymentDate);
+
+    if (!hasPriorInterestPayment && months === 0) return monthlyInterest;
+    if (months === 0 && days === 0) return monthlyInterest;
+
+    return Math.round(monthlyInterest * months + (monthlyInterest / 30) * days);
 };

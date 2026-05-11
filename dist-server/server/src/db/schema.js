@@ -12,6 +12,7 @@ export const customers = pgTable('customers', {
     address: text('address').notNull(),
     phone: text('phone'),
     description: text('description'),
+    remark: text('remark'),
     photo: text('photo'),
     faceDescriptor: text('face_descriptor'),
 });

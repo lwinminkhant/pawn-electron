@@ -79,6 +79,8 @@ const Redeem: React.FC = () => {
       pawn.interestRate,
       pawn.lastPaymentDate,
       pawn.createdAt,
+      new Date(),
+      pawn.hasInterestPayments ?? false,
     );
 
   const getDiscountAmount = (pawnId: number, maxDiscount: number) =>

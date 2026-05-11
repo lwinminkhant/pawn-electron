@@ -15,6 +15,7 @@ import {
 import { api, type CashTransaction, type PawnRow } from '@/lib/api';
 import {
     calculateInterestByDays,
+    calculateRedeemInterest,
     daysBetween,
     formatDate,
     formatDateTime,
@@ -81,13 +82,21 @@ export default function PawnDetailScreen() {
         }, [load]),
     );
 
-    const { daysDue, interestDue, dailyInterest } = useMemo(() => {
-        if (!pawn) return { daysDue: 0, interestDue: 0, dailyInterest: 0 };
+    const { daysDue, interestDue, redeemInterestDue, dailyInterest } = useMemo(() => {
+        if (!pawn) return { daysDue: 0, interestDue: 0, redeemInterestDue: 0, dailyInterest: 0 };
         const base = pawn.lastPaymentDate || pawn.createdAt || new Date().toISOString();
         const days = daysBetween(base, new Date());
         const daily = calculateInterestByDays(pawn.loanAmount ?? 0, pawn.interestRate ?? 0, 1);
         const due = calculateInterestByDays(pawn.loanAmount ?? 0, pawn.interestRate ?? 0, days);
-        return { daysDue: days, interestDue: due, dailyInterest: daily };
+        const redeemDue = calculateRedeemInterest(
+            pawn.loanAmount ?? 0,
+            pawn.interestRate ?? 0,
+            pawn.lastPaymentDate,
+            pawn.createdAt,
+            new Date(),
+            pawn.hasInterestPayments ?? false,
+        );
+        return { daysDue: days, interestDue: due, redeemInterestDue: redeemDue, dailyInterest: daily };
     }, [pawn]);
 
     if (loading) return <Loading label="Loading pawn…" />;
@@ -219,6 +228,7 @@ export default function PawnDetailScreen() {
                 pawn={pawn}
                 daysDue={daysDue}
                 interestDue={interestDue}
+                redeemInterestDue={redeemInterestDue}
                 onClose={() => setSheet(null)}
                 onDone={async () => {
                     setSheet(null);
@@ -234,11 +244,12 @@ type SheetProps = {
     pawn: PawnRow;
     daysDue: number;
     interestDue: number;
+    redeemInterestDue: number;
     onClose: () => void;
     onDone: () => void;
 };
 
-const ActionSheet: React.FC<SheetProps> = ({ mode, pawn, daysDue, interestDue, onClose, onDone }) => {
+const ActionSheet: React.FC<SheetProps> = ({ mode, pawn, daysDue, interestDue, redeemInterestDue, onClose, onDone }) => {
     const theme = useTheme();
     const [days, setDays] = useState('');
     const [amount, setAmount] = useState('');
@@ -274,8 +285,8 @@ const ActionSheet: React.FC<SheetProps> = ({ mode, pawn, daysDue, interestDue, o
     const totalRedeem = useMemo(() => {
         const principal = pawn.loanAmount ?? 0;
         const discount = Math.max(0, Number(redeemDiscount) || 0);
-        return Math.max(0, principal + interestDue - discount);
-    }, [pawn.loanAmount, interestDue, redeemDiscount]);
+        return Math.max(0, principal + redeemInterestDue - discount);
+    }, [pawn.loanAmount, redeemInterestDue, redeemDiscount]);
 
     const submit = async () => {
         setSubmitting(true);
@@ -412,7 +423,7 @@ const ActionSheet: React.FC<SheetProps> = ({ mode, pawn, daysDue, interestDue, o
                         {mode === 'redeem' ? (
                             <View style={{ gap: theme.spacing.sm }}>
                                 <KVRow label="Principal" value={formatMMK(pawn.loanAmount)} />
-                                <KVRow label="Interest due" value={formatMMK(interestDue)} />
+                                <KVRow label="Interest due" value={formatMMK(redeemInterestDue)} />
                                 <Field label="Discount on interest (MMK)">
                                     <Input
                                         value={redeemDiscount}

@@ -23,6 +23,7 @@ export interface SettlementPawn {
   status: string;
   createdAt: string;
   lastPaymentDate?: string;
+  hasInterestPayments?: boolean;
   daysDue?: number;
   currentInterestDue?: number;
   maxAvailableAmount?: number;
