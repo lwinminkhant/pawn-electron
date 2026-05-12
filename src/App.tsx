@@ -16,8 +16,6 @@ import {
   TriangleAlert,
   X,
   CalendarDays,
-  PanelLeftClose,
-  PanelLeftOpen,
   ChevronDown,
   Languages,
   Moon,
@@ -455,14 +453,17 @@ function App() {
             navCollapsed ? "justify-center px-0" : "px-5 gap-2.5",
           )}
         >
-          <div
-            className="w-7 h-7 rounded-[5px] bg-[var(--brass)] flex items-center justify-center"
-            aria-hidden
+          <button
+            type="button"
+            onClick={() => setNavCollapsed((current) => !current)}
+            aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+            title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+            className="w-7 h-7 rounded-[5px] bg-[var(--brass)] flex items-center justify-center hover:bg-[var(--brass-hover)] transition-colors shrink-0"
           >
             <span className="text-[var(--brass-text-on)] text-[13px] font-bold mono">
               P
             </span>
-          </div>
+          </button>
           {!navCollapsed && (
             <div className="leading-none">
               <div className="text-[14px] font-semibold tracking-tight">
@@ -540,15 +541,6 @@ function App() {
         style={{ gridColumn: 2 }}
       >
         <div className="flex items-center gap-2 min-w-0 shrink">
-          <button
-            type="button"
-            onClick={() => setNavCollapsed((current) => !current)}
-            aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"}
-            title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-[6px] border border-[var(--hairline)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors shrink-0"
-          >
-            {navCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-          </button>
           <h2 className="text-[14px] font-semibold tracking-tight truncate shrink min-w-0 max-w-[min(100%,14rem)]">
             {t(`nav.${currentPage}`)}
           </h2>
