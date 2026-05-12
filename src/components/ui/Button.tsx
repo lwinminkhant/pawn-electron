@@ -44,7 +44,7 @@ const sizes: Record<Size, string> = {
   lg: "h-12 px-5 text-[15px]",
 };
 
-export const Button: React.FC<ButtonProps> = ({
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({
   variant = "secondary",
   size = "md",
   leadingIcon,
@@ -56,8 +56,9 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   type = "button",
   ...rest
-}) => (
+}, ref) => (
   <button
+    ref={ref}
     {...rest}
     type={type}
     disabled={disabled || loading}
@@ -80,4 +81,5 @@ export const Button: React.FC<ButtonProps> = ({
     {children}
     {!loading && trailingIcon}
   </button>
-);
+));
+Button.displayName = "Button";

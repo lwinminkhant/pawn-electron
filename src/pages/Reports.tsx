@@ -23,7 +23,6 @@ import {
   Field,
   Input,
   Money,
-  PageHeader,
   Select,
   StatCard,
   Table,
@@ -2524,12 +2523,6 @@ const Reports = () => {
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('pages.reports.analytics')}
-        title={t('pages.reports.reportsTitle')}
-        description={t('pages.reports.reportsDesc')}
-      />
-
       <div className="flex gap-1 border-b border-[var(--hairline)] overflow-x-auto mb-6 -mx-1 px-1">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;

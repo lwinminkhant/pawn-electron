@@ -11,7 +11,6 @@ import {
   EmptyState,
   Field,
   Input,
-  PageHeader,
   Select,
   Table,
   TBody,
@@ -150,21 +149,16 @@ const Users: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('pages.users.admin')}
-        title={t('pages.users.userManagement')}
-        description={t('pages.users.userManagementDesc')}
-        actions={
-          <Button
-            type="button"
-            variant="primary"
-            leadingIcon={<Plus size={14} />}
-            onClick={() => handleOpenModal()}
-          >
-            {t('pages.users.addUser')}
-          </Button>
-        }
-      />
+      <div className="mb-4 flex justify-end">
+        <Button
+          type="button"
+          variant="primary"
+          leadingIcon={<Plus size={14} />}
+          onClick={() => handleOpenModal()}
+        >
+          {t('pages.users.addUser')}
+        </Button>
+      </div>
 
       <Card>
         <CardBody className="p-0">

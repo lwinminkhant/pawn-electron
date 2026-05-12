@@ -11,7 +11,6 @@ import {
   Field,
   Input,
   Money,
-  PageHeader,
   Table,
   TBody,
   TD,
@@ -23,7 +22,8 @@ import SettlementTicketDetailsDialog, {
   type SettlementPawn,
 } from "../components/SettlementTicketDetailsDialog";
 import { useSettlementTicketsLoader } from "../hooks/useSettlementTicketsLoader";
-import { formatDateTime, formatNumber } from "../utils/format";
+import { getCurrentBusinessDate, useBusinessDate } from "../utils/businessDate";
+import { formatDate, formatDateTime, formatNumber } from "../utils/format";
 import {
   clearSettlementCart,
   getSettlementCartIds,
@@ -34,7 +34,10 @@ import type {
   BatchRedeemRequestItem,
   BatchSettlementResult,
 } from "../../shared/contracts/settlement";
-import { calculateRedeemInterest } from "../../shared/settlement/calculations";
+import {
+  calculateRedeemInterest,
+  getElapsedMonthsAndDays,
+} from "../../shared/settlement/calculations";
 
 type Notice = {
   type: "success" | "error";
@@ -64,6 +67,7 @@ const Redeem: React.FC = () => {
       setMessage(text ? { type: "error", text } : null);
     },
   });
+  useBusinessDate();
 
   useEffect(() => onSettlementCartChange("redeem", setCartIds), []);
 
@@ -73,13 +77,16 @@ const Redeem: React.FC = () => {
     }
   }, [cartIds, successResult]);
 
+  const getRedeemBaseDate = (pawn: SettlementPawn) =>
+    new Date(pawn.lastPaymentDate || pawn.createdAt);
+
   const getInterestAmount = (pawn: SettlementPawn) =>
     calculateRedeemInterest(
       pawn.loanAmount,
       pawn.interestRate,
       pawn.lastPaymentDate,
       pawn.createdAt,
-      new Date(),
+      getCurrentBusinessDate(),
       pawn.hasInterestPayments ?? false,
     );
 
@@ -87,11 +94,16 @@ const Redeem: React.FC = () => {
     Math.min(Number(discounts[pawnId] || 0), maxDiscount);
 
   const rows = pawns.map((pawn) => {
+    const baseDate = getRedeemBaseDate(pawn);
+    const redeemDate = getCurrentBusinessDate();
+    const pawnLastFor = getElapsedMonthsAndDays(baseDate, redeemDate);
     const interestAmount = getInterestAmount(pawn);
     const discountAmount = getDiscountAmount(pawn.id, interestAmount);
     const total = pawn.loanAmount + interestAmount - discountAmount;
     return {
       pawn,
+      baseDate,
+      pawnLastFor,
       interestAmount,
       discountAmount,
       total,
@@ -229,12 +241,6 @@ const Redeem: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('pages.redeem.ledgerRedeem')}
-        title={t('pages.redeem.batchRedeem')}
-        description={t('pages.redeem.batchRedeemDesc')}
-      />
-
       {message && (
         <div className="mb-6">
           <Banner tone={message.type === "success" ? "success" : "danger"}>
@@ -243,7 +249,7 @@ const Redeem: React.FC = () => {
         </div>
       )}
 
-      <div className="max-w-6xl">
+      <div className="w-full">
         {successResult ? (
           renderSuccess()
         ) : rows.length === 0 ? (
@@ -290,6 +296,7 @@ const Redeem: React.FC = () => {
                         <TH>{t('common.ticket')}</TH>
                         <TH>{t('common.customer')}</TH>
                         <TH>{t('common.item')}</TH>
+                        <TH>{t('pages.redeem.pawnLastFor')}</TH>
                         <TH align="right">{t('common.principal')}</TH>
                         <TH align="right">{t('common.interest')}</TH>
                         <TH align="right">{t('common.discount')}</TH>
@@ -313,6 +320,22 @@ const Redeem: React.FC = () => {
                             </div>
                             <div className="text-[11px] text-[var(--text-muted)]">
                               {row.pawn.item.type}
+                            </div>
+                          </TD>
+                          <TD>
+                            <div className="font-medium">
+                              {t('pages.redeem.monthDayPeriod', {
+                                months: row.pawnLastFor.months,
+                                days: row.pawnLastFor.days,
+                              })}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-muted)]">
+                              {t(
+                                row.pawn.lastPaymentDate
+                                  ? 'pages.redeem.fromLastInterestPaid'
+                                  : 'pages.redeem.fromOpenedDate',
+                                { date: formatDate(row.baseDate) },
+                              )}
                             </div>
                           </TD>
                           <TD align="right">

@@ -15,7 +15,6 @@ import {
   Field,
   Input,
   Money,
-  PageHeader,
   SearchInput,
   Textarea,
 } from "../components/ui";
@@ -213,12 +212,6 @@ const Customers: React.FC<{
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t("pages.customers.directory") || "Directory"}
-        title={t("pages.customers.title") || "Customers"}
-        description={t("pages.customers.desc") || "Search the directory, select a person, and review their profile and pawn history on the same page."}
-      />
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <Card className="lg:col-span-5">
           <CardHeader>

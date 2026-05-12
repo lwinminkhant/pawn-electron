@@ -133,6 +133,19 @@ const formatNumericInputDisplay = (
 
 const Pawn: React.FC = () => {
   const { t } = useTranslation();
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const nrcInputRef = useRef<HTMLInputElement>(null);
+  const addressInputRef = useRef<HTMLTextAreaElement>(null);
+  const itemTypeSelectRef = useRef<HTMLSelectElement>(null);
+  const physicalNumberInputRef = useRef<HTMLInputElement>(null);
+  const itemDescriptionRef = useRef<HTMLTextAreaElement>(null);
+  const totalWeightInputRef = useRef<HTMLInputElement>(null);
+  const nonGoldWeightInputRef = useRef<HTMLInputElement>(null);
+  const loanAmountInputRef = useRef<HTMLInputElement>(null);
+  const calculateButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const printReceiptButtonRef = useRef<HTMLButtonElement>(null);
 
   // ---------- Customer ----------
   const [customerSearch, setCustomerSearch] = useState("");
@@ -180,6 +193,7 @@ const Pawn: React.FC = () => {
   const [nonGoldPe, setNonGoldPe] = useState("");
   const [nonGoldYway, setNonGoldYway] = useState("");
   const [oneKyatInGrams, setOneKyatInGrams] = useState("16.606");
+  const usesStorage = usesGoldJewelleryStorage(itemType);
 
   useEffect(() => {
     const refreshItemTypes = () => {
@@ -416,9 +430,13 @@ const Pawn: React.FC = () => {
     const rate = parseFloat(goldRate) || 0;
     return Math.round(netWeight * rate);
   };
+  const net = netGoldWeight();
+  const maxLoan = calculateMaxLoan();
 
-  const applyCalculatedLoan = () => {
-    setLoanAmount(calculateMaxLoan().toString());
+  const calculateSuggestedLoanAmount = (currentMaxLoan: number) => {
+    if (currentMaxLoan <= 0) return 0;
+    if (currentMaxLoan < 10000) return currentMaxLoan;
+    return Math.floor(currentMaxLoan / 10000) * 10000;
   };
 
   const handleLoanAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -436,6 +454,159 @@ const Pawn: React.FC = () => {
     }
   };
 
+  const getPawnFieldSequence = useCallback(() => {
+    const refs: Array<{
+      key:
+        | "fullName"
+        | "phone"
+        | "nrc"
+        | "address"
+        | "type"
+        | "physicalNumber"
+        | "description"
+        | "weight"
+        | "nonGoldWeight"
+        | "loanAmount"
+        | "calculate"
+        | "confirm";
+      element: HTMLElement | null;
+    }> = [
+      { key: "fullName", element: fullNameInputRef.current },
+      { key: "phone", element: phoneInputRef.current },
+      { key: "nrc", element: nrcInputRef.current },
+      { key: "address", element: addressInputRef.current },
+      { key: "type", element: itemTypeSelectRef.current },
+      { key: "physicalNumber", element: physicalNumberInputRef.current },
+      { key: "description", element: itemDescriptionRef.current },
+    ];
+
+    if (usesStorage) {
+      refs.push(
+        { key: "weight", element: totalWeightInputRef.current },
+        { key: "nonGoldWeight", element: nonGoldWeightInputRef.current },
+      );
+    }
+
+    if (usesStorage) {
+      refs.push({ key: "calculate", element: calculateButtonRef.current });
+    }
+
+    refs.push({ key: "loanAmount", element: loanAmountInputRef.current });
+
+    refs.push({ key: "confirm", element: confirmButtonRef.current });
+    return refs;
+  }, [usesStorage]);
+
+  const focusPawnFieldByOffset = useCallback(
+    (
+      current:
+        | "fullName"
+        | "phone"
+        | "nrc"
+        | "address"
+        | "type"
+        | "physicalNumber"
+        | "description"
+        | "weight"
+        | "nonGoldWeight"
+        | "loanAmount"
+        | "calculate"
+        | "confirm",
+      offset: 1 | -1,
+    ) => {
+      const refs = getPawnFieldSequence();
+      const startIndex = refs.findIndex((entry) => entry.key === current);
+      if (startIndex < 0) return;
+
+      for (
+        let index = startIndex + offset;
+        index >= 0 && index < refs.length;
+        index += offset
+      ) {
+        const element = refs[index]?.element;
+        if (!element) continue;
+        const disabled =
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLButtonElement
+            ? element.disabled
+            : false;
+        if (disabled) continue;
+        element.focus();
+        return;
+      }
+    },
+    [getPawnFieldSequence],
+  );
+
+  const handlePawnFormNavigation = useCallback(
+    (
+      event:
+        | React.KeyboardEvent<HTMLInputElement>
+        | React.KeyboardEvent<HTMLTextAreaElement>
+        | React.KeyboardEvent<HTMLSelectElement>
+        | React.KeyboardEvent<HTMLButtonElement>,
+      current:
+        | "fullName"
+        | "phone"
+        | "nrc"
+        | "address"
+        | "type"
+        | "physicalNumber"
+        | "description"
+        | "weight"
+        | "nonGoldWeight"
+        | "loanAmount"
+        | "calculate"
+        | "confirm",
+    ) => {
+      if (event.currentTarget instanceof HTMLTextAreaElement && event.shiftKey) {
+        return;
+      }
+      if (event.key === "Enter") {
+        if (current === "confirm") {
+          return;
+        }
+        event.preventDefault();
+        focusPawnFieldByOffset(current, 1);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        focusPawnFieldByOffset(current, 1);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        focusPawnFieldByOffset(current, -1);
+      }
+    },
+    [focusPawnFieldByOffset],
+  );
+
+  const handleCalculateAndAdvance = useCallback(() => {
+    setLoanAmount(calculateSuggestedLoanAmount(maxLoan).toString());
+    confirmButtonRef.current?.focus();
+  }, [maxLoan]);
+
+  const handleCalculateAndFocusLoanAmount = useCallback(() => {
+    setLoanAmount(calculateSuggestedLoanAmount(maxLoan).toString());
+    loanAmountInputRef.current?.focus();
+  }, [maxLoan]);
+
+  const handleCalculateButtonKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleCalculateAndFocusLoanAmount();
+        return;
+      }
+      handlePawnFormNavigation(event, "calculate");
+    },
+    [handleCalculateAndFocusLoanAmount, handlePawnFormNavigation],
+  );
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -445,7 +616,6 @@ const Pawn: React.FC = () => {
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [storageInfoLoading, setStorageInfoLoading] = useState(false);
   const [storageInfoError, setStorageInfoError] = useState<string | null>(null);
-  const usesStorage = usesGoldJewelleryStorage(itemType);
   const businessDateYmd = useBusinessDate();
 
   useEffect(() => {
@@ -529,6 +699,20 @@ const Pawn: React.FC = () => {
     void loadStorageInfo();
   }, [businessDateYmd, loadStorageInfo, usesStorage]);
 
+  useEffect(() => {
+    if (!receiptData) return;
+
+    printReceiptButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      window.print();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [receiptData]);
+
   const handleCustomerSelect = (customer: Customer) => {
     setSelectedCustomer(customer);
     setCustomerSearch(customer.name);
@@ -542,6 +726,9 @@ const Pawn: React.FC = () => {
     });
     setShowDropdown(false);
     setShowFaceSearch(false);
+    requestAnimationFrame(() => {
+      itemTypeSelectRef.current?.focus();
+    });
   };
 
   const handleCustomerSearchChange = (value: string) => {
@@ -734,8 +921,6 @@ const Pawn: React.FC = () => {
     }
   };
 
-  const net = netGoldWeight();
-  const maxLoan = calculateMaxLoan();
   const closeReceiptDialog = () => setReceiptData(null);
   const closeErrorDialog = () => setMessage(null);
   const handleItemPhotoChange = useCallback((image: string) => {
@@ -806,6 +991,7 @@ const Pawn: React.FC = () => {
                   }
                 >
                   <Input
+                    ref={fullNameInputRef}
                     id="pawn-customer-full-name"
                     type="text"
                     placeholder={
@@ -823,7 +1009,11 @@ const Pawn: React.FC = () => {
                       customerSearch &&
                       setShowDropdown(filteredCustomers.length > 0)
                     }
-                    onKeyDown={handleKeyDown}
+                    onKeyDown={(e) => {
+                      handleKeyDown(e);
+                      if (e.defaultPrevented) return;
+                      handlePawnFormNavigation(e, "fullName");
+                    }}
                     disabled={!!selectedCustomer}
                     autoComplete="new-password"
                     autoCorrect="off"
@@ -913,6 +1103,7 @@ const Pawn: React.FC = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label={t('common.phone')} className="col-span-2">
                     <Input
+                      ref={phoneInputRef}
                       type="text"
                       placeholder={t('pages.pawn.phonePlaceholder')}
                       inputMode="numeric"
@@ -925,10 +1116,12 @@ const Pawn: React.FC = () => {
                         })
                       }
                       disabled={!!selectedCustomer}
+                      onKeyDown={(e) => handlePawnFormNavigation(e, "phone")}
                     />
                   </Field>
                   <Field label={t('common.nrc')} className="col-span-2">
                     <Input
+                      ref={nrcInputRef}
                       type="text"
                       placeholder={t('pages.pawn.nrcPlaceholder')}
                       value={newCustomer.nrc}
@@ -939,10 +1132,12 @@ const Pawn: React.FC = () => {
                         })
                       }
                       disabled={!!selectedCustomer}
+                      onKeyDown={(e) => handlePawnFormNavigation(e, "nrc")}
                     />
                   </Field>
                   <Field label={t('common.address')} className="col-span-2">
                     <Textarea
+                      ref={addressInputRef}
                       placeholder={t('pages.pawn.addressPlaceholder')}
                       rows={3}
                       value={newCustomer.address}
@@ -953,6 +1148,7 @@ const Pawn: React.FC = () => {
                         })
                       }
                       disabled={!!selectedCustomer}
+                      onKeyDown={(e) => handlePawnFormNavigation(e, "address")}
                     />
                   </Field>
                   <div className="col-span-2">
@@ -1109,8 +1305,10 @@ const Pawn: React.FC = () => {
                 <div className="flex flex-col gap-4 md:flex-row md:items-end">
                   <Field label={t('common.type')} className="flex-1">
                     <Select
+                      ref={itemTypeSelectRef}
                       value={itemType}
                       onChange={(e) => setItemType(e.target.value)}
+                      onKeyDown={(e) => handlePawnFormNavigation(e, "type")}
                     >
                       {itemTypes.map((type) => (
                         <option key={type} value={type}>
@@ -1132,11 +1330,13 @@ const Pawn: React.FC = () => {
                 {!usesStorage && (
                   <Field label={t('pages.pawn.physicalNumber')} hint={t('pages.pawn.physicalNumberHint')}>
                     <Input
+                      ref={physicalNumberInputRef}
                       type="text"
                       value={physicalNumber}
                       onChange={(e) => setPhysicalNumber(e.target.value)}
                       placeholder={t('pages.pawn.physicalNumberPlaceholder')}
                       monoDigits
+                      onKeyDown={(e) => handlePawnFormNavigation(e, "physicalNumber")}
                     />
                   </Field>
                 )}
@@ -1150,10 +1350,12 @@ const Pawn: React.FC = () => {
                   }
                 >
                   <Textarea
+                    ref={itemDescriptionRef}
                     rows={2}
                     placeholder={t('pages.pawn.descriptionPlaceholder')}
                     value={itemDescription}
                     onChange={(e) => setItemDescription(e.target.value)}
+                    onKeyDown={(e) => handlePawnFormNavigation(e, "description")}
                   />
                   {suggestedItemDescriptions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -1185,12 +1387,14 @@ const Pawn: React.FC = () => {
                       <div>
                         <Field label={t('pages.pawn.totalWeightG')}>
                           <Input
+                            ref={totalWeightInputRef}
                             type="text"
                             inputMode="decimal"
                             monoDigits
                             placeholder={t('pages.pawn.totalWeightPlaceholder')}
                             value={formattedWeightInput}
                             onChange={(e) => handleGramChange(e.target.value)}
+                            onKeyDown={(e) => handlePawnFormNavigation(e, "weight")}
                           />
                         </Field>
                         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1215,6 +1419,7 @@ const Pawn: React.FC = () => {
                       <div>
                         <Field label={t('pages.pawn.nonGoldWeightG')}>
                           <Input
+                            ref={nonGoldWeightInputRef}
                             type="text"
                             inputMode="decimal"
                             monoDigits
@@ -1223,6 +1428,7 @@ const Pawn: React.FC = () => {
                             onChange={(e) =>
                               handleNonGoldGramChange(e.target.value)
                             }
+                            onKeyDown={(e) => handlePawnFormNavigation(e, "nonGoldWeight")}
                           />
                         </Field>
                         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1278,28 +1484,35 @@ const Pawn: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Field label={t('pages.pawn.loanAmountMmk')} className="md:col-span-2">
                     <div className="flex gap-2">
+                      {usesStorage && (
+                        <Button
+                          ref={calculateButtonRef}
+                          type="button"
+                          variant="secondary"
+                          leadingIcon={<Calculator size={14} />}
+                          onClick={handleCalculateAndAdvance}
+                          onKeyDown={handleCalculateButtonKeyDown}
+                        >
+                          {t('pages.pawn.calculate')}
+                        </Button>
+                      )}
                       <Input
+                        ref={loanAmountInputRef}
                         type="text"
                         inputMode="numeric"
                         placeholder={t('pages.pawn.loanAmountPlaceholder')}
                         monoDigits
                         value={formattedLoanAmountInput}
-                        onKeyDown={handleLoanAmountKeyDown}
+                        onKeyDown={(e) => {
+                          handleLoanAmountKeyDown(e);
+                          if (e.defaultPrevented && e.key !== "Enter") return;
+                          handlePawnFormNavigation(e, "loanAmount");
+                        }}
                         onChange={(e) =>
                           setLoanAmount(sanitizeNumericInput(e.target.value))
                         }
                         className="flex-1"
                       />
-                      {usesStorage && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          leadingIcon={<Calculator size={14} />}
-                          onClick={applyCalculatedLoan}
-                        >
-                          {t('pages.pawn.calculate')}
-                        </Button>
-                      )}
                     </div>
                   </Field>
                   <Field label={t('pages.pawn.interestPerMonth')}>
@@ -1342,10 +1555,12 @@ const Pawn: React.FC = () => {
                     {t('pages.pawn.tipPressEnter')}
                   </div>
                   <Button
+                    ref={confirmButtonRef}
                     type="submit"
                     variant="primary"
                     size="lg"
                     loading={isSubmitting}
+                    onKeyDown={(e) => handlePawnFormNavigation(e, "confirm")}
                     leadingIcon={
                       !isSubmitting ? <Check size={16} /> : undefined
                     }
@@ -1370,6 +1585,7 @@ const Pawn: React.FC = () => {
             description={t('pages.pawn.ticketReady', { pawnId: receiptData.pawnId })}
             footer={
               <Button
+                ref={printReceiptButtonRef}
                 type="button"
                 variant="primary"
                 leadingIcon={<Printer size={15} />}

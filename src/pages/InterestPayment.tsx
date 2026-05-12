@@ -14,7 +14,6 @@ import {
   Field,
   Input,
   Money,
-  PageHeader,
   Select,
   Table,
   TBody,
@@ -479,12 +478,6 @@ const InterestPayment: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('pages.interest.ledgerInterest')}
-        title={t('pages.interest.batchInterestPayment')}
-        description={t('pages.interest.batchInterestPaymentDesc')}
-      />
-
       {message && (
         <div className="mb-6">
           <Banner tone={message.type === "success" ? "success" : "danger"}>
@@ -493,7 +486,7 @@ const InterestPayment: React.FC = () => {
         </div>
       )}
 
-      <div className="max-w-6xl space-y-6">
+      <div className="w-full space-y-6">
         {successResult ? (
           renderSuccess()
         ) : rows.length === 0 ? (

@@ -881,7 +881,7 @@ function App() {
         className="overflow-y-auto"
         style={{ gridColumn: 2 }}
       >
-        <div className="max-w-[1280px] mx-auto px-8 py-8">{renderPage()}</div>
+        <div className="w-full px-8 py-8">{renderPage()}</div>
       </main>
     </div>
   );

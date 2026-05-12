@@ -9,7 +9,6 @@ import {
   CardHeader,
   EmptyState,
   Money,
-  PageHeader,
   SearchInput,
   Table,
   TBody,
@@ -373,12 +372,6 @@ const SearchPage: React.FC<{
 
   return (
     <div>
-      <PageHeader
-        eyebrow={t('nav.admin')}
-        title={t('pages.search.title')}
-        description={t('pages.search.desc')}
-      />
-
       <div className="mb-4 flex flex-wrap gap-2">
         {STATUS_FILTERS.map(({ id, label }) => (
           <Button
