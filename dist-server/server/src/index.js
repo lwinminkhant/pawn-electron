@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { and, count, desc, eq, gte, inArray, lte, or, sql, sum } from 'drizzle-orm';
-import { db, getDatabaseSessionTimeZone, setDatabaseSessionTimeZone } from './db/index.js';
+import { db, getDatabaseSessionTimeZone, setDatabaseSessionTimeZone, verifyDatabaseConnection } from './db/index.js';
 import { cashTransactions, customers, employees, items, pawns, settings } from './db/schema.js';
 import { GOLD_JEWELLERY_ITEM_TYPE, getStorageInfo, getStoragePlacementForDate, normalizeStorageLocation, usesGoldJewelleryStorage, } from '../../shared/storage/storageUtils.js';
 import { calculateInterestAmountForPeriod, calculateRedeemInterest, } from '../../shared/settlement/calculations.js';
@@ -289,6 +289,7 @@ const app = express();
 const port = Number(process.env.API_PORT || 8787);
 const DB_TIMEZONE_KEY = 'db_timezone';
 const APP_SETTINGS_KEY = 'app_settings';
+const SETUP_COMPLETED_KEY = 'setup_completed_at';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.get('/health', (_req, res) => {
@@ -321,6 +322,118 @@ app.post('/auth/login', async (req, res) => {
     catch (error) {
         console.error('[API] login failed:', error);
         return res.status(500).json({ success: false, message: 'Login failed: database is not ready' });
+    }
+});
+app.get('/setup/status', async (_req, res) => {
+    try {
+        await ensureDbReady();
+        const userRows = await db.select({
+            id: employees.id,
+            level: employees.level,
+            password: employees.password,
+            userName: employees.userName,
+        }).from(employees);
+        const appSettingsRows = await db.select().from(settings).where(eq(settings.key, APP_SETTINGS_KEY)).limit(1);
+        const dbTimeZoneRows = await db.select().from(settings).where(eq(settings.key, DB_TIMEZONE_KEY)).limit(1);
+        const completionRows = await db.select().from(settings).where(eq(settings.key, SETUP_COMPLETED_KEY)).limit(1);
+        return res.json({
+            success: true,
+            setup: {
+                completed: Boolean(completionRows[0]?.value),
+                defaultAdminCredentials: userRows.some((row) => row.level === 'Admin' &&
+                    row.userName === 'admin' &&
+                    row.password === 'password'),
+                hasAppSettings: Boolean(appSettingsRows[0]?.value),
+                hasDbTimeZone: Boolean(dbTimeZoneRows[0]?.value),
+                hasUsers: userRows.length > 0,
+            },
+        });
+    }
+    catch (error) {
+        console.error('[API] get-setup-status failed:', error);
+        return res.status(500).json({ success: false, message: 'Database is not ready for setup yet' });
+    }
+});
+app.post('/setup/bootstrap', async (req, res) => {
+    const adminUser = req.body?.adminUser && typeof req.body.adminUser === 'object'
+        ? req.body.adminUser
+        : {};
+    const adminName = typeof adminUser.name === 'string' ? adminUser.name.trim() : '';
+    const adminUserName = typeof adminUser.userName === 'string' ? adminUser.userName.trim() : '';
+    const adminPassword = typeof adminUser.password === 'string' ? adminUser.password.trim() : '';
+    const dbTimeZone = typeof req.body?.dbTimeZone === 'string' ? req.body.dbTimeZone.trim() : '';
+    const settingsPayload = req.body?.settings && typeof req.body.settings === 'object' && !Array.isArray(req.body.settings)
+        ? req.body.settings
+        : null;
+    if (!adminName || !adminUserName || !adminPassword) {
+        return res.status(400).json({ success: false, message: 'Admin name, username, and password are required' });
+    }
+    if (!dbTimeZone) {
+        return res.status(400).json({ success: false, message: 'Database time zone is required' });
+    }
+    if (!settingsPayload) {
+        return res.status(400).json({ success: false, message: 'Application settings are required' });
+    }
+    try {
+        await ensureDbReady();
+        await setDatabaseSessionTimeZone(dbTimeZone);
+        const existingAdminRows = await db
+            .select({ id: employees.id })
+            .from(employees)
+            .where(eq(employees.level, 'Admin'))
+            .limit(1);
+        const existingAdminId = existingAdminRows[0]?.id ?? null;
+        const sameUsernameRows = await db
+            .select({ id: employees.id })
+            .from(employees)
+            .where(eq(employees.userName, adminUserName))
+            .limit(1);
+        const conflictingUserId = sameUsernameRows[0]?.id ?? null;
+        if (conflictingUserId && conflictingUserId !== existingAdminId) {
+            return res.status(409).json({ success: false, message: 'That username is already in use' });
+        }
+        if (existingAdminId) {
+            await db
+                .update(employees)
+                .set({
+                level: 'Admin',
+                name: adminName,
+                password: adminPassword,
+                userName: adminUserName,
+            })
+                .where(eq(employees.id, existingAdminId));
+        }
+        else {
+            await db.insert(employees).values({
+                level: 'Admin',
+                name: adminName,
+                password: adminPassword,
+                userName: adminUserName,
+            });
+        }
+        const serializedSettings = JSON.stringify(settingsPayload);
+        await db
+            .insert(settings)
+            .values([
+            { key: APP_SETTINGS_KEY, value: serializedSettings },
+            { key: DB_TIMEZONE_KEY, value: dbTimeZone },
+            { key: SETUP_COMPLETED_KEY, value: new Date().toISOString() },
+        ])
+            .onConflictDoUpdate({
+            target: settings.key,
+            set: { value: sql `excluded.value` },
+        });
+        return res.json({
+            success: true,
+            setup: {
+                completed: true,
+                dbTimeZone,
+            },
+        });
+    }
+    catch (error) {
+        console.error('[API] bootstrap-setup failed:', error);
+        return res.status(500).json({ success: false, message: 'Failed to complete setup' });
     }
 });
 app.get('/users', async (_req, res) => {
@@ -1878,6 +1991,19 @@ const loadConfiguredDbTimeZone = async () => {
     const rows = await db.select().from(settings).where(eq(settings.key, DB_TIMEZONE_KEY)).limit(1);
     return rows[0]?.value?.trim() || null;
 };
+const formatStartupError = (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const cause = error instanceof Error ? error.cause : null;
+    const causeText = cause instanceof Error ? cause.message : String(cause || '');
+    const combined = `${message}\n${causeText}`;
+    if (/ECONNREFUSED|Unable to connect to Postgres/i.test(combined)) {
+        return 'Database connection failed. Check that PostgreSQL is running and that the database URL is correct.';
+    }
+    if (/DATABASE_URL is required/i.test(combined)) {
+        return 'Database setup is incomplete. Enter a valid PostgreSQL database URL and try again.';
+    }
+    return `Startup failed: ${message}`;
+};
 const ensureDbReady = async () => {
     await db.execute(sql `
         CREATE TABLE IF NOT EXISTS employees (
@@ -2009,6 +2135,13 @@ const ensureDbReady = async () => {
     `);
 };
 const start = async () => {
+    try {
+        await verifyDatabaseConnection();
+    }
+    catch (error) {
+        throw new Error(`Unable to connect to Postgres using DATABASE_URL="${process.env.DATABASE_URL || ''}". ` +
+            'Make sure PostgreSQL is running and reachable before launching the app.', { cause: error });
+    }
     await ensureDbReady();
     const configuredDbTimeZone = await loadConfiguredDbTimeZone();
     if (configuredDbTimeZone) {
@@ -2019,6 +2152,6 @@ const start = async () => {
     });
 };
 start().catch((error) => {
-    console.error('[API] failed to start:', error);
+    console.error('[API] failed to start:', formatStartupError(error));
     process.exit(1);
 });

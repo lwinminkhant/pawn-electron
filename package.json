@@ -2,8 +2,21 @@
   "name": "pawn-electron",
   "private": true,
   "version": "0.0.0",
+  "description": "Pawn management desktop application with Electron, React, and an Express API.",
+  "author": "Lwin Min Khant",
   "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
+  "build": {
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "dist-server/**/*",
+      "package.json"
+    ]
+  },
   "scripts": {
     "commitlint": "commitlint --edit",
     "start": "concurrently -k \"npm run api:dev\" \"npm run dev\"",
@@ -24,7 +37,9 @@
     "docker:logs": "docker compose logs -f api",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:build": "npm run build && tsc -p tsconfig.electron.json && electron-builder",
+    "electron:build": "npm run build && npm run api:build && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && electron-builder",
+    "build:mac:dmg": "npm run build && npm run api:build && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && electron-builder --mac dmg",
+    "build:win": "npm run build && npm run api:build && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && electron-builder --win",
     "electron:start": "wait-on tcp:5173 tcp:8787 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .",
     "rebuild": "electron-builder install-app-deps",
     "electron:dev": "concurrently -k \"npm run docker:up\" \"cross-env BROWSER=none npm run dev\" \"npm run electron:start\" \"tsc -w -p tsconfig.electron.json\" \"tsc -w -p tsconfig.preload.json\""

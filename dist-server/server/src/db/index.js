@@ -18,6 +18,15 @@ pool.on('connect', (client) => {
     });
 });
 export const db = drizzle(pool, { schema });
+export const verifyDatabaseConnection = async () => {
+    const client = await pool.connect();
+    try {
+        await client.query('select 1');
+    }
+    finally {
+        client.release();
+    }
+};
 export const setDatabaseSessionTimeZone = async (timezone) => {
     configuredSessionTimeZone = timezone;
     await applySessionTimeZone(pool, timezone);

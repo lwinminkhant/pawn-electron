@@ -19,6 +19,14 @@ type IpcArg = unknown;
 interface ElectronAPI {
     api: {
         auth: { login: (payload: LoginPayload) => Promise<any> };
+        setup: {
+            getStatus: () => Promise<any>;
+            bootstrap: (payload: {
+                adminUser: { name: string; password: string; userName: string };
+                dbTimeZone: string;
+                settings: unknown;
+            }) => Promise<any>;
+        };
         users: {
             list: () => Promise<any>;
             create: (payload: CreateUserPayload) => Promise<any>;
@@ -66,6 +74,10 @@ interface ElectronAPI {
 
 declare global {
     interface Window {
+        desktopSetup?: {
+            getStatus: () => Promise<any>;
+            saveRuntimeConfig: (payload: { apiPort?: number; databaseUrl: string }) => Promise<any>;
+        };
         electron: ElectronAPI;
     }
 }

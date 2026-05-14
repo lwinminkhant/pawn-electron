@@ -37,7 +37,8 @@ import Reports from "./pages/Reports";
 import Users from "./pages/Users";
 import SearchPage from "./pages/Search";
 import BarcodeScanner from "./components/BarcodeScanner";
-import { Button, Dialog } from "./components/ui";
+import StartupWizard from "./components/StartupWizard";
+import { Button, Dialog, PageLoader } from "./components/ui";
 import { getStoredTheme, initTheme, setTheme, type Theme } from "./utils/theme";
 import { cn } from "./utils/format";
 import {
@@ -172,6 +173,10 @@ function App() {
     useState<DashboardHeaderAction | null>(null);
   const [settingsHeaderAction, setSettingsHeaderAction] =
     useState<SettingsHeaderAction | null>(null);
+  const [startupChecking, setStartupChecking] = useState(
+    () => Boolean(window.desktopSetup?.getStatus),
+  );
+  const [startupWizardRequired, setStartupWizardRequired] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const businessDateYmd = useBusinessDate();
   const isAdmin = user?.level === "Admin";
@@ -186,6 +191,40 @@ function App() {
 
   useEffect(() => {
     initTheme();
+  }, []);
+
+  const refreshStartupStatus = async () => {
+    if (!window.desktopSetup?.getStatus) {
+      setStartupWizardRequired(false);
+      setStartupChecking(false);
+      return;
+    }
+
+    setStartupChecking(true);
+    try {
+      const desktopStatus = await window.desktopSetup.getStatus();
+      if (!desktopStatus?.enabled) {
+        setStartupWizardRequired(false);
+        return;
+      }
+
+      if (!desktopStatus.configExists || !desktopStatus.apiHealthy) {
+        setStartupWizardRequired(true);
+        return;
+      }
+
+      const setupStatus = await window.electron.api.setup.getStatus();
+      setStartupWizardRequired(!(setupStatus?.success && setupStatus.setup?.completed));
+    } catch (error) {
+      console.error("Failed to resolve startup status", error);
+      setStartupWizardRequired(true);
+    } finally {
+      setStartupChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshStartupStatus();
   }, []);
 
   useEffect(() => {
@@ -389,6 +428,14 @@ function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isAdmin]);
+
+  if (startupChecking) {
+    return <PageLoader label="Loading desktop startup..." />;
+  }
+
+  if (startupWizardRequired) {
+    return <StartupWizard onComplete={() => void refreshStartupStatus()} />;
+  }
 
   if (!user) {
     return <Login onLogin={handleLogin} />;

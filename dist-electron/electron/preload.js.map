@@ -1,1 +1,1 @@
-{"version":3,"file":"preload.js","sourceRoot":"","sources":["../../electron/preload.ts"],"names":[],"mappings":"AAAA,uEAAuE;AACvE,iFAAiF;AACjF,iFAAiF;AACjF,OAAO,CAAC,GAAG,CAAC,iCAAiC,CAAC,CAAC"}
+{"version":3,"file":"preload.js","sourceRoot":"","sources":["../../electron/preload.ts"],"names":[],"mappings":";;AAAA,uCAAsD;AAEtD,wBAAa,CAAC,iBAAiB,CAAC,cAAc,EAAE;IAC5C,SAAS,EAAE,GAAG,EAAE,CAAC,sBAAW,CAAC,MAAM,CAAC,0BAA0B,CAAC;IAC/D,iBAAiB,EAAE,CAAC,OAAkD,EAAE,EAAE,CACtE,sBAAW,CAAC,MAAM,CAAC,mCAAmC,EAAE,OAAO,CAAC;CACvE,CAAC,CAAC;AAEH,OAAO,CAAC,GAAG,CAAC,sCAAsC,CAAC,CAAC"}

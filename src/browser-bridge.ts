@@ -434,14 +434,29 @@ export const initializeBrowserBridge = () => {
                     body: JSON.stringify({ settings: data?.settings }),
                 });
 
+            case 'get-setup-status':
+                return httpJson('/setup/status');
+
+            case 'bootstrap-setup':
+                return httpJson('/setup/bootstrap', {
+                    method: 'POST',
+                    body: JSON.stringify(data || {}),
+                });
+
             default:
                 return { success: false, message: `Unknown channel: ${channel}` };
         }
     };
 
     window.electron = {
+        ...(window.electron || {}),
         api: {
+            ...(window.electron?.api || {}),
             auth: { login: (payload: AnyRecord) => invoke('login', payload) },
+            setup: {
+                getStatus: () => invoke('get-setup-status', {}),
+                bootstrap: (payload: AnyRecord) => invoke('bootstrap-setup', payload),
+            },
             users: {
                 list: () => invoke('get-users', {}),
                 create: (payload: AnyRecord) => invoke('create-user', payload),
@@ -483,11 +498,12 @@ export const initializeBrowserBridge = () => {
                 setDbTimeZone: (payload: AnyRecord) => invoke('set-db-timezone', payload),
             },
         },
-        ipcRenderer: {
-            send: () => undefined,
-            on: () => () => undefined,
-            once: () => undefined,
-            invoke,
-        },
+        ipcRenderer:
+            window.electron?.ipcRenderer || {
+                send: () => undefined,
+                on: () => () => undefined,
+                once: () => undefined,
+                invoke,
+            },
     } as unknown as Window['electron'];
 };

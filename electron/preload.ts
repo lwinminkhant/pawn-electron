@@ -1,5 +1,9 @@
-// Option B: the renderer installs its own `window.electron` bridge via
-// `src/browser-bridge.ts`, which talks to the HTTP API at http://localhost:8787.
-// This preload intentionally does nothing so Electron and web share one backend.
-console.log('[Preload] no-op (HTTP API mode)');
-export {};
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('desktopSetup', {
+    getStatus: () => ipcRenderer.invoke('desktop-setup:get-status'),
+    saveRuntimeConfig: (payload: { apiPort?: number; databaseUrl: string }) =>
+        ipcRenderer.invoke('desktop-setup:save-runtime-config', payload),
+});
+
+console.log('[Preload] desktop setup bridge ready');
