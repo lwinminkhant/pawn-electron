@@ -21,6 +21,7 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUSINESS_DATE_HEADER = 'x-business-date';
 const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MIN_PRINCIPAL_AMOUNT = 20_000;
 
 const getTimeZoneDateParts = (value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -1040,7 +1041,7 @@ app.post('/pawns/batch/pay-interest', async (req, res) => {
             mode: 'interest',
             results: responseResults,
             totals: {
-                principal: 0,
+                principal: responseResults.reduce((sum, row) => sum + row.principal, 0),
                 interest: responseResults.reduce((sum, row) => sum + row.interest, 0),
                 discount: 0,
                 total: responseResults.reduce((sum, row) => sum + row.total, 0),
@@ -1188,6 +1189,12 @@ app.post('/pawns/:id/adjust', async (req, res) => {
         }
 
         const newLoanAmount = adjustmentType === 'PLUS_AMOUNT' ? currentLoan + numericAmount : currentLoan - numericAmount;
+        if (newLoanAmount < MIN_PRINCIPAL_AMOUNT) {
+            return res.status(400).json({
+                success: false,
+                message: `Principal amount cannot be less than ${MIN_PRINCIPAL_AMOUNT.toLocaleString()} MMK.`,
+            });
+        }
         const zeroInterestPaidUntilDate = daysDue > 0
             ? addCalendarDaysInTimeZone(new Date(pawn.lastPaymentDate || pawn.createdAt || businessDate), daysDue, timeZone)
             : null;
@@ -1216,6 +1223,124 @@ app.post('/pawns/:id/adjust', async (req, res) => {
     } catch (error) {
         console.error('[API] adjust-pawn-amount failed:', error);
         return res.status(500).json({ success: false, message: 'Failed to adjust pawn amount' });
+    }
+});
+
+app.post('/pawns/:id/adjust-with-interest', async (req, res) => {
+    const pawnId = Number(req.params.id);
+    const { amount, adjustmentType, employeeId } = req.body ?? {};
+    if (!Number.isFinite(pawnId) || pawnId <= 0) return res.status(400).json({ success: false, message: 'Invalid pawn id' });
+    if (adjustmentType !== 'PLUS_AMOUNT' && adjustmentType !== 'MINUS_AMOUNT') {
+        return res.status(400).json({ success: false, message: 'Invalid adjustment type' });
+    }
+    try {
+        const employeeFk = await resolveEmployeeFk(employeeId);
+        const businessDate = getRequestBusinessDate(req);
+        const transactionDate = getRequestTransactionDate(req);
+        const pawnRows = await db
+            .select({
+                id: pawns.id,
+                status: items.status,
+                loanAmount: cashTransactions.amount,
+                maxAvailableAmount: pawns.maxAvailableAmount,
+                interestRate: pawns.interestRate,
+                lastPaymentDate: pawns.lastPaymentDate,
+                createdAt: cashTransactions.date,
+            })
+            .from(pawns)
+            .leftJoin(items, eq(pawns.itemFk, items.id))
+            .leftJoin(cashTransactions, and(eq(cashTransactions.pawnFk, pawns.id), eq(cashTransactions.type, 'PAWN')))
+            .where(eq(pawns.id, pawnId))
+            .limit(1);
+        const pawn = pawnRows[0];
+        if (!pawn) return res.status(404).json({ success: false, message: 'Pawn not found' });
+        if (pawn.status !== 'PAWN') return res.status(400).json({ success: false, message: 'Pawn is not active' });
+
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid adjustment amount' });
+        }
+
+        const principalMap = await currentPrincipalByPawnId();
+        const currentLoan = Number(principalMap.get(pawnId) ?? pawn.loanAmount ?? 0);
+        if (adjustmentType === 'MINUS_AMOUNT' && numericAmount > currentLoan) {
+            return res.status(400).json({ success: false, message: 'Decrease amount cannot be greater than current principal' });
+        }
+        const maxAvailableAmount = Number(pawn.maxAvailableAmount || currentLoan);
+        if (adjustmentType === 'PLUS_AMOUNT' && currentLoan + numericAmount > maxAvailableAmount) {
+            return res.status(400).json({
+                success: false,
+                message: `Increase amount exceeds max available amount (${maxAvailableAmount.toLocaleString()} MMK).`,
+            });
+        }
+
+        const timeZone = getDatabaseSessionTimeZone();
+        const daysDue = getDaysDueToToday(pawn.lastPaymentDate, pawn.createdAt, timeZone, businessDate);
+        const baseSource = pawn.lastPaymentDate || pawn.createdAt || businessDate;
+        const interestDue = calculateInterestAmountForPeriod(
+            currentLoan,
+            Number(pawn.interestRate || 0),
+            baseSource,
+            businessDate,
+        );
+        const zeroInterestPaidUntilDate = daysDue > 0
+            ? addCalendarDaysInTimeZone(new Date(baseSource), daysDue, timeZone)
+            : null;
+        const newLoanAmount = adjustmentType === 'PLUS_AMOUNT' ? currentLoan + numericAmount : currentLoan - numericAmount;
+        if (newLoanAmount < MIN_PRINCIPAL_AMOUNT) {
+            return res.status(400).json({
+                success: false,
+                message: `Principal amount cannot be less than ${MIN_PRINCIPAL_AMOUNT.toLocaleString()} MMK.`,
+            });
+        }
+        const adjustmentDescription = `${adjustmentType === 'PLUS_AMOUNT' ? 'Principal increase' : 'Principal decrease'}${
+            zeroInterestPaidUntilDate ? `; closed ${daysDue} zero-interest day(s)` : ''
+        }`;
+
+        await db.transaction(async (tx) => {
+            if (zeroInterestPaidUntilDate) {
+                await tx.update(pawns).set({ lastPaymentDate: zeroInterestPaidUntilDate }).where(eq(pawns.id, pawnId));
+            }
+            if (interestDue > 0) {
+                await tx.insert(cashTransactions).values({
+                    type: 'PAID_INTEREST',
+                    amount: interestDue,
+                    employeeFk,
+                    description: `Interest payment for ${daysDue} days`,
+                    pawnFk: pawnId,
+                    date: transactionDate,
+                });
+            }
+            await tx.insert(cashTransactions).values({
+                type: adjustmentType,
+                amount: numericAmount,
+                employeeFk,
+                description: adjustmentDescription,
+                pawnFk: pawnId,
+                date: transactionDate,
+            });
+        });
+
+        const totalCustomerPays = adjustmentType === 'MINUS_AMOUNT'
+            ? interestDue + numericAmount
+            : Math.max(interestDue - numericAmount, 0);
+        const totalCustomerReceives = adjustmentType === 'PLUS_AMOUNT'
+            ? Math.max(numericAmount - interestDue, 0)
+            : 0;
+
+        return res.json({
+            success: true,
+            newLoanAmount,
+            interestPaid: interestDue,
+            adjustmentAmount: numericAmount,
+            adjustmentType,
+            totalCustomerPays,
+            totalCustomerReceives,
+            zeroInterestPaidUntilDate: zeroInterestPaidUntilDate?.toISOString(),
+        });
+    } catch (error) {
+        console.error('[API] adjust-with-interest failed:', error);
+        return res.status(500).json({ success: false, message: 'Failed to save adjustment' });
     }
 });
 

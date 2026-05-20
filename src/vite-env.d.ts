@@ -40,6 +40,7 @@ interface ElectronAPI {
             batchExpire: (payload: BatchExpirePayload) => Promise<any>;
             batchPayInterest: (payload: BatchPayInterestPayload) => Promise<any>;
             adjustAmount: (payload: { pawnId: number; amount: number; adjustmentType: 'PLUS_AMOUNT' | 'MINUS_AMOUNT' }) => Promise<any>;
+            adjustWithInterest: (payload: { pawnId: number; amount: number; adjustmentType: 'PLUS_AMOUNT' | 'MINUS_AMOUNT' }) => Promise<any>;
             updateNote: (payload: { pawnId: number; note: string }) => Promise<any>;
             redeem: (payload: { pawnId: number; totalAmount: number; discountAmount?: number }) => Promise<any>;
             batchRedeem: (payload: BatchRedeemPayload) => Promise<any>;

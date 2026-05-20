@@ -66,6 +66,7 @@ type PageId =
   | "pawn"
   | "redeem"
   | "interest"
+  | "adjustment"
   | "customers"
   | "search"
   | "reports"
@@ -129,6 +130,7 @@ const OPERATIONS: NavItem[] = [
   { id: "pawn", label: "Pawn", icon: PackagePlus },
   { id: "redeem", label: "Redeem", icon: HandCoins },
   { id: "interest", label: "Interest", icon: Percent },
+  { id: "adjustment", label: "Adjustment", icon: RefreshCcw },
 ];
 
 /** Admin: ticket search and customer directory */
@@ -181,11 +183,11 @@ function App() {
   const businessDateYmd = useBusinessDate();
   const isAdmin = user?.level === "Admin";
   const showTicketLoader =
-    currentPage === "redeem" || currentPage === "interest";
+    currentPage === "redeem" || currentPage === "interest" || currentPage === "adjustment";
   const currentSettlementMode: SettlementMode | null =
     currentPage === "redeem"
       ? "redeem"
-      : currentPage === "interest"
+      : currentPage === "interest" || currentPage === "adjustment"
         ? "interest"
         : null;
 
@@ -320,7 +322,7 @@ function App() {
     const nextSettlementMode: SettlementMode | null =
       page === "redeem"
         ? "redeem"
-        : page === "interest"
+        : page === "interest" || page === "adjustment"
           ? "interest"
           : null;
 
@@ -451,6 +453,8 @@ function App() {
         return <Redeem />;
       case "interest":
         return <InterestPayment />;
+      case "adjustment":
+        return <InterestPayment viewMode="adjustment" />;
       case "customers":
         return isAdmin ? (
           <Customers onNavigate={(p) => navigateToPage(p)} />

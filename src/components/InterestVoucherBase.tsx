@@ -151,7 +151,7 @@ export const InterestVoucherBase: React.FC<InterestVoucherBaseProps> = ({
   const voucherMarkup = (
     <div id="print-receipt" className="print-only pawn-voucher-sheet">
       <div className="pawn-voucher-page">
-        <section className="voucher-copy" aria-hidden="true" />
+        <VoucherCopy showQr={false} />
         <VoucherCopy showQr />
       </div>
     </div>

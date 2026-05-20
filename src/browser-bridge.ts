@@ -232,6 +232,18 @@ export const initializeBrowserBridge = () => {
                 });
             }
 
+            case 'adjust-pawn-with-interest': {
+                const pawnId = Number(data?.pawnId);
+                if (!Number.isFinite(pawnId)) return { success: false, message: 'Invalid pawn id' };
+                return httpJson(`/pawns/${pawnId}/adjust-with-interest`, {
+                    method: 'POST',
+                    body: JSON.stringify(withCurrentEmployeeId({
+                        amount: data?.amount,
+                        adjustmentType: data?.adjustmentType,
+                    })),
+                });
+            }
+
             case 'update-pawn-note': {
                 const pawnId = Number(data?.pawnId);
                 if (!Number.isFinite(pawnId)) return { success: false, message: 'Invalid pawn id' };
@@ -471,6 +483,7 @@ export const initializeBrowserBridge = () => {
                 batchExpire: (payload: AnyRecord) => invoke('batch-expire', payload),
                 batchPayInterest: (payload: AnyRecord) => invoke('batch-pay-interest', payload),
                 adjustAmount: (payload: AnyRecord) => invoke('adjust-pawn-amount', payload),
+                adjustWithInterest: (payload: AnyRecord) => invoke('adjust-pawn-with-interest', payload),
                 updateNote: (payload: AnyRecord) => invoke('update-pawn-note', payload),
                 redeem: (payload: AnyRecord) => invoke('redeem-pawn', payload),
                 batchRedeem: (payload: AnyRecord) => invoke('batch-redeem', payload),

@@ -396,19 +396,8 @@ const Redeem: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid md:grid-cols-[1fr_280px] gap-6 items-start">
-                <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
-                  <p className="text-[12px] font-medium text-[var(--text-secondary)]">
-                    {t('pages.redeem.batchRules')}
-                  </p>
-                  <ul className="mt-2 text-[12px] text-[var(--text-muted)] space-y-1">
-                    <li>{t('pages.redeem.onlyActiveTickets')}</li>
-                    <li>{t('pages.redeem.discountAppliesAgainstInterest')}</li>
-                    <li>{t('pages.redeem.ifOneTicketFails')}</li>
-                  </ul>
-                </div>
-
-                <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-3">
+              <div className="flex justify-end">
+                <div className="w-full max-w-[320px] rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-3">
                   <Summary label={t('common.principal')} value={totals.principal} />
                   <Summary label={t('common.interest')} value={totals.interest} />
                   <Summary label={t('common.discount')} value={-totals.discount} signed />

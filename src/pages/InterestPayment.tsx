@@ -55,6 +55,13 @@ type Notice = {
   text: string;
 };
 
+type AdjustmentDialogState = {
+  open: boolean;
+  success: boolean;
+  title: string;
+  description: string;
+};
+
 type PaymentPlan = "all" | "1m" | "2m" | "3m" | "custom";
 
 type TicketPaymentChoice = {
@@ -94,12 +101,17 @@ type InterestVoucherData = {
   expireDate: string;
 };
 
+type PrincipalAdjustmentType = "PLUS_AMOUNT" | "MINUS_AMOUNT";
+const MIN_PRINCIPAL_AMOUNT = 20_000;
+
 const defaultChoice = (): TicketPaymentChoice => ({
   plan: "all",
   customMonths: "",
 });
 
-const InterestPayment: React.FC = () => {
+const InterestPayment: React.FC<{
+  viewMode?: "collect" | "adjustment";
+}> = ({ viewMode = "collect" }) => {
   const { t } = useTranslation();
   const [cartIds, setCartIds] = useState<number[]>(() =>
     getSettlementCartIds("interest"),
@@ -111,12 +123,21 @@ const InterestPayment: React.FC = () => {
   const [choices, setChoices] = useState<Record<number, TicketPaymentChoice>>(
     {},
   );
-  const [adjustmentAmount, setAdjustmentAmount] = useState("0");
+  const [adjustmentAmount, setAdjustmentAmount] = useState("");
+  const [adjustmentType, setAdjustmentType] =
+    useState<PrincipalAdjustmentType>("PLUS_AMOUNT");
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [dbTimeZone, setDbTimeZone] = useState(getConfiguredDbTimeZone());
   const [detailPawn, setDetailPawn] = useState<SettlementPawn | null>(null);
   const [voucherData, setVoucherData] = useState<InterestVoucherData | null>(null);
+  const [voucherDialogOpen, setVoucherDialogOpen] = useState(false);
   const [submittedRows, setSubmittedRows] = useState<InterestPaymentRow[]>([]);
+  const [adjustmentDialog, setAdjustmentDialog] = useState<AdjustmentDialogState>({
+    open: false,
+    success: true,
+    title: "",
+    description: "",
+  });
   const { pawns, setPawns, loading } = useSettlementTicketsLoader({
     mode: "interest",
     cartIds,
@@ -301,7 +322,10 @@ const InterestPayment: React.FC = () => {
     }
   };
 
-  const closeVoucherDialog = () => setVoucherData(null);
+  const closeVoucherDialog = () => {
+    setVoucherDialogOpen(false);
+    setVoucherData(null);
+  };
 
   const handlePrintVoucher = (pawnId: number) => {
     const successRow = successResult?.results.find((row) => row.pawnId === pawnId);
@@ -325,9 +349,14 @@ const InterestPayment: React.FC = () => {
       paidUntilDate: successRow.newLastPaymentDate,
       expireDate: successRow.newLastPaymentDate,
     });
+    setVoucherDialogOpen(true);
   };
 
   const singlePawn = pawns.length === 1 ? pawns[0] : null;
+  const currentPrincipal = singlePawn?.loanAmount ?? 0;
+  const adjustmentInterestDue = Math.max(0, singlePawn?.currentInterestDue ?? 0);
+  const adjustmentDaysDue = Math.max(0, singlePawn?.daysDue ?? 0);
+  const availableToReduce = Math.max(0, currentPrincipal - MIN_PRINCIPAL_AMOUNT);
   const availableToIncrease = singlePawn
     ? Math.max(
         0,
@@ -335,12 +364,38 @@ const InterestPayment: React.FC = () => {
           singlePawn.loanAmount,
       )
     : 0;
+  const adjustmentLimit =
+    adjustmentType === "PLUS_AMOUNT" ? availableToIncrease : availableToReduce;
+  const adjustmentAmountNumber = Math.round(Number(adjustmentAmount) || 0);
+  const projectedPrincipal = Math.max(
+    0,
+    adjustmentType === "PLUS_AMOUNT"
+      ? currentPrincipal + adjustmentAmountNumber
+      : currentPrincipal - adjustmentAmountNumber,
+  );
+  const projectedCustomerPays =
+    adjustmentType === "MINUS_AMOUNT"
+      ? adjustmentInterestDue + adjustmentAmountNumber
+      : Math.max(adjustmentInterestDue - adjustmentAmountNumber, 0);
+  const projectedCustomerReceives =
+    adjustmentType === "PLUS_AMOUNT"
+      ? Math.max(adjustmentAmountNumber - adjustmentInterestDue, 0)
+      : 0;
+  const quickAdjustmentAmounts = buildAdjustmentQuickAmounts(adjustmentLimit);
+  const isAdjustmentAmountValid =
+    adjustmentAmountNumber > 0 && adjustmentAmountNumber <= adjustmentLimit;
+  const canAdjustPrincipal = isAdjustmentAmountValid;
 
-  const handleAdjustPrincipal = async (
-    adjustmentType: "PLUS_AMOUNT" | "MINUS_AMOUNT",
-  ) => {
+  useEffect(() => {
     if (!singlePawn) return;
-    const amount = Math.round(Number(adjustmentAmount) || 0);
+    if (adjustmentType === "PLUS_AMOUNT" && availableToIncrease <= 0) {
+      setAdjustmentType("MINUS_AMOUNT");
+    }
+  }, [adjustmentType, availableToIncrease, singlePawn]);
+
+  const handleAdjustPrincipal = async () => {
+    if (!singlePawn) return;
+    const amount = adjustmentAmountNumber;
     if (amount <= 0) {
       setMessage({ type: "error", text: t('pages.interest.enterValidAdjustmentAmount') });
       return;
@@ -352,20 +407,32 @@ const InterestPayment: React.FC = () => {
       });
       return;
     }
+    if (adjustmentType === "MINUS_AMOUNT" && amount > availableToReduce) {
+      setMessage({
+        type: "error",
+        text: t('pages.interest.reduceAmountCannotExceed', { amount: formatNumber(availableToReduce) }),
+      });
+      return;
+    }
 
     setIsAdjusting(true);
     setMessage(null);
     try {
-      const result = await window.electron.api.pawns.adjustAmount({
+      const result = await window.electron.api.pawns.adjustWithInterest({
         pawnId: singlePawn.id,
         amount,
         adjustmentType,
       });
       if (!result.success) {
-        setMessage({
-          type: "error",
-          text: result.message || t('pages.interest.failedToAdjustPrincipal'),
+        setAdjustmentDialog({
+          open: true,
+          success: false,
+          title: t('pages.interest.adjustmentUnsuccessful'),
+          description: result.message || t('pages.interest.failedToAdjustPrincipal'),
         });
+        clearSettlementCart("interest");
+        setChoices({});
+        setPawns([]);
         return;
       }
 
@@ -374,7 +441,6 @@ const InterestPayment: React.FC = () => {
       });
       if (refreshed.success && refreshed.pawn) {
         const updatedPawn = refreshed.pawn as SettlementPawn;
-        setPawns([updatedPawn]);
         setVoucherData({
           pawnId: updatedPawn.id,
           physicalNumber: updatedPawn.physicalNumber,
@@ -393,20 +459,32 @@ const InterestPayment: React.FC = () => {
           expireDate: updatedPawn.lastPaymentDate || updatedPawn.createdAt,
         });
       }
-      setAdjustmentAmount("0");
-      setMessage({
-        type: "success",
-        text:
-          adjustmentType === "PLUS_AMOUNT"
-            ? t('pages.interest.principalIncreasedSuccessfully')
-            : t('pages.interest.principalReducedSuccessfully'),
+
+      setAdjustmentAmount("");
+      setAdjustmentDialog({
+        open: true,
+        success: true,
+        title: t('pages.interest.adjustmentSavedSuccessfully'),
+        description: t('pages.interest.adjustmentSavedSummary', {
+          principal: formatNumber(result.newLoanAmount ?? projectedPrincipal),
+          pay: formatNumber(result.totalCustomerPays ?? projectedCustomerPays),
+          receive: formatNumber(result.totalCustomerReceives ?? projectedCustomerReceives),
+        }),
       });
+      clearSettlementCart("interest");
+      setChoices({});
+      setPawns([]);
     } catch (error) {
       console.error("Error adjusting principal:", error);
-      setMessage({
-        type: "error",
-        text: t('pages.interest.errorOccurredAdjustingPrincipal'),
+      setAdjustmentDialog({
+        open: true,
+        success: false,
+        title: t('pages.interest.adjustmentUnsuccessful'),
+        description: t('pages.interest.errorOccurredAdjustingPrincipal'),
       });
+      clearSettlementCart("interest");
+      setChoices({});
+      setPawns([]);
     } finally {
       setIsAdjusting(false);
     }
@@ -429,8 +507,9 @@ const InterestPayment: React.FC = () => {
                         <TR>
                           <TH>{t('common.ticket')}</TH>
                           <TH>{t('common.customer')}</TH>
+                          <TH align="right">{t('common.principal')}</TH>
                           <TH align="right">{t('pages.interest.daysPaid')}</TH>
-                          <TH align="right">{t('pages.interest.amount')}</TH>
+                          <TH align="right">{t('common.interest')}</TH>
                           <TH>{t('pages.interest.paidUntil')}</TH>
                           <TH align="right">{t('common.action')}</TH>
                         </TR>
@@ -440,11 +519,14 @@ const InterestPayment: React.FC = () => {
                 <TR key={row.pawnId}>
                   <TD mono>#{row.pawnId}</TD>
                   <TD>{row.customerName}</TD>
+                  <TD align="right">
+                    <Money amount={row.principal} size="sm" />
+                  </TD>
                   <TD align="right" mono>
                     {row.daysToPay ?? 0}
                   </TD>
                   <TD align="right">
-                    <Money amount={row.total} size="sm" strong />
+                    <Money amount={row.interest} size="sm" strong />
                   </TD>
                   <TD>{row.newLastPaymentDate ? formatDate(row.newLastPaymentDate) : "—"}</TD>
                   <TD align="right">
@@ -465,7 +547,7 @@ const InterestPayment: React.FC = () => {
           </Table>
         </div>
         <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
-          <Summary label={t('pages.interest.collectedInterest')} value={successResult?.totals.total ?? 0} strong />
+          <Summary label={t('pages.interest.collectedInterest')} value={successResult?.totals.interest ?? 0} strong />
         </div>
         <div className="flex justify-end">
           <Button type="button" onClick={() => setSuccessResult(null)}>
@@ -500,6 +582,7 @@ const InterestPayment: React.FC = () => {
           </Card>
         ) : (
           <>
+            {viewMode === "collect" ? (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -536,6 +619,7 @@ const InterestPayment: React.FC = () => {
                           <TH>{t('pages.interest.paidUntil')}</TH>
                           <TH align="right">{t('pages.interest.daysDue')}</TH>
                           <TH>{t('pages.interest.plan')}</TH>
+                          <TH align="right">{t('common.principal')}</TH>
                           <TH align="right">{t('pages.interest.amount')}</TH>
                           <TH align="right">{t('common.action')}</TH>
                         </TR>
@@ -590,6 +674,9 @@ const InterestPayment: React.FC = () => {
                               </div>
                             </TD>
                             <TD align="right">
+                              <Money amount={row.pawn.loanAmount} size="sm" />
+                            </TD>
+                            <TD align="right">
                               <div className="space-y-1">
                                 <Money amount={row.amountToPay} size="sm" strong />
                                 <div className="text-[11px] text-[var(--text-muted)]">
@@ -629,20 +716,17 @@ const InterestPayment: React.FC = () => {
                   </div>
                 )}
 
-                <div className="grid md:grid-cols-[1fr_280px] gap-6 items-start">
-                  <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4">
-                    <p className="text-[12px] font-medium text-[var(--text-secondary)]">
-                      {t('pages.interest.batchRules')}
-                    </p>
-                    <ul className="mt-2 text-[12px] text-[var(--text-muted)] space-y-1">
-                      <li>{t('pages.interest.eachTicketDifferentPlan')}</li>
-                      <li>{t('pages.interest.onlyPositiveInterestSubmitted')}</li>
-                      <li>{t('pages.interest.ifOneTicketFailsRollback')}</li>
-                    </ul>
-                  </div>
-                  <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-3">
+                <div className="flex justify-end">
+                  <div className="w-full max-w-[320px] rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-4">
                     <Summary label={t('pages.interest.ticketsPayable')} value={payableRows.length} plain />
-                    <Summary label={t('pages.interest.collectedInterest')} value={totalInterest} strong />
+                    <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                        {t('pages.interest.collectedInterest')}
+                      </p>
+                      <div className="mt-2">
+                        <Money amount={totalInterest} size="md" strong />
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       className="w-full"
@@ -655,52 +739,206 @@ const InterestPayment: React.FC = () => {
                 </div>
               </CardBody>
             </Card>
-
-            {singlePawn && (
+            ) : singlePawn ? (
               <Card>
                 <CardHeader>
-                  <h3 className="text-[15px] font-semibold tracking-tight">
-                    {t('pages.interest.singleTicketPrincipalAdjustment')}
-                  </h3>
-                </CardHeader>
-                <CardBody className="space-y-4">
-                  <Banner tone="info">
-                    {t('pages.interest.principalAdjustmentV1')}
-                  </Banner>
-                  <div>
-                    <div className="flex gap-3 items-end">
-                      <Field label={t('pages.interest.adjustmentAmount')}>
-                        <Input
-                          value={adjustmentAmount}
-                          onChange={(event) =>
-                            setAdjustmentAmount(event.target.value.replace(/\D+/g, ""))
-                          }
-                          inputMode="numeric"
-                          monoDigits
-                        />
-                      </Field>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        leadingIcon={<Minus size={14} />}
-                        onClick={() => handleAdjustPrincipal("MINUS_AMOUNT")}
-                        disabled={isAdjusting}
-                      >
-                        {t('pages.interest.reduce')}
-                      </Button>
-                      <Button
-                        type="button"
-                        leadingIcon={<Plus size={14} />}
-                        onClick={() => handleAdjustPrincipal("PLUS_AMOUNT")}
-                        disabled={isAdjusting}
-                      >
-                        {t('pages.interest.increase')}
-                      </Button>
-                    </div>
-                    <p className="text-[12px] text-[var(--text-muted)] mt-1.5">
-                      {t('pages.interest.availableToIncrease', { amount: formatNumber(availableToIncrease) })}
+                  <div className="space-y-1">
+                    <h3 className="text-[15px] font-semibold tracking-tight">
+                      {t('pages.interest.singleTicketPrincipalAdjustment')}
+                    </h3>
+                    <p className="text-[12px] text-[var(--text-muted)]">
+                      {t('pages.interest.principalAdjustmentHelper')}
                     </p>
                   </div>
+                </CardHeader>
+                <CardBody className="space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3 rounded-[14px] border border-[var(--hairline)] bg-[var(--surface-raised)] px-4 py-4">
+                    <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-3">
+                      <AdjustmentMeta
+                        label={t('common.ticket')}
+                        value={`#${singlePawn.id}`}
+                      />
+                      <AdjustmentMeta
+                        label={t('common.customer')}
+                        value={singlePawn.customerName}
+                      />
+                      <AdjustmentMeta
+                        label={t('common.item')}
+                        value={singlePawn.item.description || singlePawn.item.type}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      leadingIcon={<Eye size={14} />}
+                      onClick={() => setDetailPawn(singlePawn)}
+                    >
+                      {t('common.view')}
+                    </Button>
+                  </div>
+                  {adjustmentInterestDue > 0 ? (
+                    <Banner tone="warning">
+                      <div className="font-medium">
+                        {t('pages.interest.interestWillBeCollectedOnSave')}
+                      </div>
+                      <div className="text-[12px] mt-1">
+                        {t('pages.interest.adjustmentInterestDueSummary', {
+                          days: adjustmentDaysDue,
+                          amount: formatNumber(adjustmentInterestDue),
+                        })}
+                      </div>
+                    </Banner>
+                  ) : null}
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_360px]">
+                    <div className="space-y-4">
+                      <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <AdjustmentStat
+                            label={t('pages.interest.currentPrincipal')}
+                            value={currentPrincipal}
+                          />
+                          <AdjustmentStat
+                            label={t('pages.interest.adjustmentLimit')}
+                            value={adjustmentLimit}
+                          />
+                          <AdjustmentStat
+                            label={t('pages.interest.interestCollectedNow')}
+                            value={adjustmentInterestDue}
+                          />
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => setAdjustmentType("MINUS_AMOUNT")}
+                            disabled={isAdjusting}
+                            className={
+                              adjustmentType === "MINUS_AMOUNT"
+                                ? "rounded-[14px] border border-[var(--danger)] bg-[var(--danger-soft)] px-4 py-4 text-left transition-colors"
+                                : "rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-4 text-left transition-colors hover:border-[var(--danger)]/35"
+                            }
+                          >
+                            <div className="flex items-center gap-2 text-[var(--danger)]">
+                              <Minus size={16} />
+                              <span className="text-[14px] font-semibold">{t('pages.interest.reduce')}</span>
+                            </div>
+                            <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
+                              {t('pages.interest.availableToReduce', { amount: formatNumber(availableToReduce) })}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAdjustmentType("PLUS_AMOUNT")}
+                            disabled={isAdjusting || availableToIncrease <= 0}
+                            className={
+                              adjustmentType === "PLUS_AMOUNT"
+                                ? "rounded-[14px] border border-[var(--success)] bg-[var(--success-soft)] px-4 py-4 text-left transition-colors"
+                                : "rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-4 text-left transition-colors hover:border-[var(--success)]/35 disabled:opacity-50"
+                            }
+                          >
+                            <div className="flex items-center gap-2 text-[var(--success)]">
+                              <Plus size={16} />
+                              <span className="text-[14px] font-semibold">{t('pages.interest.increase')}</span>
+                            </div>
+                            <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
+                              {t('pages.interest.availableToIncrease', { amount: formatNumber(availableToIncrease) })}
+                            </p>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-[14px] border border-[var(--hairline)] bg-[var(--surface-raised)] p-4 space-y-4">
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
+                          <Field
+                            label={t('pages.interest.adjustmentAmount')}
+                            hint={t('pages.interest.minimumPrincipalAfterAdjustment', {
+                              amount: formatNumber(MIN_PRINCIPAL_AMOUNT),
+                            })}
+                          >
+                            <Input
+                              value={adjustmentAmount}
+                              onChange={(event) =>
+                                setAdjustmentAmount(event.target.value.replace(/\D+/g, ""))
+                              }
+                              placeholder="0"
+                              inputMode="numeric"
+                              monoDigits
+                              className="h-12 text-[18px] font-semibold"
+                            />
+                          </Field>
+                          <AdjustmentStat
+                            label={
+                              adjustmentType === "PLUS_AMOUNT"
+                                ? t('pages.interest.principalIncrease')
+                                : t('pages.interest.principalReduction')
+                            }
+                            value={adjustmentAmountNumber}
+                            strong
+                          />
+                        </div>
+                        {quickAdjustmentAmounts.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {quickAdjustmentAmounts.map((amount) => (
+                              <Button
+                                key={amount}
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="border border-[var(--hairline)] bg-[var(--surface)]"
+                                onClick={() => setAdjustmentAmount(String(amount))}
+                                disabled={isAdjusting}
+                              >
+                                {formatNumber(amount)}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[16px] border border-[var(--hairline-strong)] bg-[var(--surface-raised)] p-4 space-y-4">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                          {t('pages.interest.projectedPrincipal')}
+                        </p>
+                        <div className="mt-2 rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] px-4 py-4">
+                          <Money amount={projectedPrincipal} size="md" strong />
+                        </div>
+                      </div>
+                      <div className="grid gap-3">
+                        <CashFlowStat
+                          label={t('pages.interest.customerPay')}
+                          value={projectedCustomerPays}
+                          tone="danger"
+                        />
+                        <CashFlowStat
+                          label={t('pages.interest.customerReceives')}
+                          value={projectedCustomerReceives}
+                          tone="success"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant={adjustmentType === "PLUS_AMOUNT" ? "primary" : "secondary"}
+                        leadingIcon={adjustmentType === "PLUS_AMOUNT" ? <Plus size={14} /> : <Minus size={14} />}
+                        onClick={handleAdjustPrincipal}
+                        disabled={isAdjusting || !canAdjustPrincipal}
+                        loading={isAdjusting}
+                        fullWidth
+                      >
+                        {t('pages.interest.saveAdjustment')}
+                      </Button>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            ) : (
+              <Card>
+                <CardBody>
+                  <EmptyState
+                    title={t('pages.interest.principalAdjustmentNeedsOneTicket')}
+                    description={t('pages.interest.principalAdjustmentNeedsOneTicketDesc')}
+                  />
                 </CardBody>
               </Card>
             )}
@@ -717,7 +955,7 @@ const InterestPayment: React.FC = () => {
       {voucherData && (
         <>
           <Dialog
-            open={Boolean(voucherData)}
+            open={voucherDialogOpen}
             onClose={closeVoucherDialog}
             title={`Interest voucher #${voucherData.pawnId}`}
             description={`${voucherData.customerName} • ${voucherData.itemDescription || voucherData.itemType}`}
@@ -746,6 +984,50 @@ const InterestPayment: React.FC = () => {
           )}
         </>
       )}
+
+      <Dialog
+        open={adjustmentDialog.open}
+        onClose={() =>
+          setAdjustmentDialog((current) => ({ ...current, open: false }))
+        }
+        title={adjustmentDialog.title}
+        description={adjustmentDialog.description}
+        size="sm"
+        footer={
+          <>
+            {adjustmentDialog.success && voucherData && (
+              <Button
+                type="button"
+                variant="secondary"
+                leadingIcon={<Printer size={14} />}
+                onClick={() => window.print()}
+              >
+                {t("common.print")}
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={() =>
+                setAdjustmentDialog((current) => ({ ...current, open: false }))
+              }
+            >
+              {t("common.ok")}
+            </Button>
+          </>
+        }
+      >
+        <div
+          className={
+            adjustmentDialog.success
+              ? "rounded-[12px] border border-[var(--success)]/25 bg-[var(--success-soft)] px-4 py-4 text-[var(--success)]"
+              : "rounded-[12px] border border-[var(--danger)]/25 bg-[var(--danger-soft)] px-4 py-4 text-[var(--danger)]"
+          }
+        >
+          <p className="text-[14px] font-semibold">
+            {adjustmentDialog.success ? t("common.success") : t("common.error")}
+          </p>
+        </div>
+      </Dialog>
     </div>
   );
 };
@@ -765,5 +1047,77 @@ const Summary: React.FC<{
     )}
   </div>
 );
+
+const AdjustmentStat: React.FC<{
+  label: string;
+  value: number;
+  strong?: boolean;
+}> = ({ label, value, strong }) => (
+  <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5">
+    <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+      {label}
+    </p>
+    <div className="mt-1">
+      <Money amount={value} size="sm" strong={strong} />
+    </div>
+  </div>
+);
+
+const AdjustmentMeta: React.FC<{
+  label: string;
+  value: string;
+}> = ({ label, value }) => (
+  <div className="rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5">
+    <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+      {label}
+    </p>
+    <p className="mt-1 text-[13px] font-semibold text-[var(--text-primary)] break-words">
+      {value || "—"}
+    </p>
+  </div>
+);
+
+const CashFlowStat: React.FC<{
+  label: string;
+  value: number;
+  tone: "success" | "danger";
+}> = ({ label, value, tone }) => (
+  <div
+    className={
+      tone === "danger"
+        ? "rounded-[12px] border border-[var(--danger)]/25 bg-[var(--danger-soft)] px-4 py-3"
+        : "rounded-[12px] border border-[var(--success)]/25 bg-[var(--success-soft)] px-4 py-3"
+    }
+  >
+    <p
+      className={
+        tone === "danger"
+          ? "text-[11px] uppercase tracking-[0.16em] text-[var(--danger)]"
+          : "text-[11px] uppercase tracking-[0.16em] text-[var(--success)]"
+      }
+    >
+      {label}
+    </p>
+    <div className="mt-2">
+      <Money
+        amount={value}
+        size="md"
+        strong
+        tone={tone}
+      />
+    </div>
+  </div>
+);
+
+function buildAdjustmentQuickAmounts(limit: number): number[] {
+  if (limit < 1_000) return [];
+  const roundToThousand = (value: number) =>
+    Math.max(1_000, Math.floor(value / 1_000) * 1_000);
+  return Array.from(
+    new Set(
+      [limit / 4, limit / 2, limit].map((value) => roundToThousand(value)),
+    ),
+  ).filter((value) => value > 0 && value <= limit);
+}
 
 export default InterestPayment;

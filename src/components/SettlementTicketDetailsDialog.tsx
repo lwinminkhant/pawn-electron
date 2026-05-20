@@ -259,6 +259,9 @@ const SettlementTicketDetailsDialog: React.FC<{
               <DetailField label="Principal">
                 <Money amount={pawn.loanAmount} size="sm" />
               </DetailField>
+              <DetailField label="Max Available Amount">
+                <Money amount={pawn.maxAvailableAmount ?? null} size="sm" />
+              </DetailField>
               <DetailField label="Interest Rate">
                 {formatDecimal(pawn.interestRate, 2)}% / mo
               </DetailField>
