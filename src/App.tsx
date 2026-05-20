@@ -42,8 +42,10 @@ import { Button, Dialog, PageLoader } from "./components/ui";
 import { getStoredTheme, initTheme, setTheme, type Theme } from "./utils/theme";
 import { cn } from "./utils/format";
 import {
+  setDatabaseCurrentDateYmd,
   setCurrentBusinessDateYmd,
   useBusinessDate,
+  useBusinessDateChangeEnabled,
 } from "./utils/businessDate";
 import {
   normalizeAppSettings,
@@ -181,6 +183,7 @@ function App() {
   const [startupWizardRequired, setStartupWizardRequired] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const businessDateYmd = useBusinessDate();
+  const businessDateChangeEnabled = useBusinessDateChangeEnabled();
   const isAdmin = user?.level === "Admin";
   const showTicketLoader =
     currentPage === "redeem" || currentPage === "interest" || currentPage === "adjustment";
@@ -250,6 +253,9 @@ function App() {
         const result = await window.electron.api.settings.getAppSettings();
         if (!cancelled && result?.success) {
           syncAppSettingsToLocalCache(normalizeAppSettings(result.settings));
+          if (typeof result.settings?.dbCurrentDateYmd === "string") {
+            setDatabaseCurrentDateYmd(result.settings.dbCurrentDateYmd);
+          }
         }
       } catch (error) {
         console.error("Failed to load app settings", error);
@@ -260,6 +266,37 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const syncDatabaseCurrentDate = async () => {
+      try {
+        const result = await window.electron.api.settings.getDbTimeZone();
+        const nextDate = result?.dbTimeZone?.currentDateYmd;
+        if (!cancelled && typeof nextDate === "string") {
+          setDatabaseCurrentDateYmd(nextDate);
+        }
+      } catch (error) {
+        console.error("Failed to sync database current date", error);
+      }
+    };
+
+    if (!businessDateChangeEnabled) {
+      void syncDatabaseCurrentDate();
+      intervalId = window.setInterval(() => {
+        void syncDatabaseCurrentDate();
+      }, 60_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (intervalId != null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [businessDateChangeEnabled]);
 
   useEffect(() => {
     persistUser(user);
@@ -723,16 +760,18 @@ function App() {
               onChange={(e) => {
                 setCurrentBusinessDateYmd(e.target.value);
               }}
+              disabled={!businessDateChangeEnabled}
               aria-label="Business date"
               title="Business date"
-              className="bg-transparent outline-none text-[12px] mono text-[var(--text-primary)]"
+              className="bg-transparent outline-none text-[12px] mono text-[var(--text-primary)] disabled:text-[var(--text-muted)] disabled:cursor-not-allowed"
             />
             <button
               type="button"
               onClick={() => {
                 setCurrentBusinessDateYmd("");
               }}
-              className="h-6 px-1.5 rounded-[6px] text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors"
+              disabled={!businessDateChangeEnabled}
+              className="h-6 px-1.5 rounded-[6px] text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)] disabled:hover:bg-transparent"
             >
               Today
             </button>

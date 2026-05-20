@@ -36,6 +36,11 @@ import {
 } from "../utils/format";
 import { getCurrentBusinessDate, useBusinessDate } from "../utils/businessDate";
 import { getCalendarDaysDue } from "../utils/timeZone";
+import {
+  loadPawnItemOverdueThresholds,
+  loadPawnItemTypes,
+  type PawnItemOverdueThresholds,
+} from "../utils/itemTypes";
 
 export type DashboardHeaderAction = {
   label: string;
@@ -85,6 +90,34 @@ interface Pawn {
   redeemedInterest?: number;
   redeemedPrincipal?: number;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const addUtcMonths = (value: Date, months: number) =>
+  new Date(
+    Date.UTC(
+      value.getUTCFullYear(),
+      value.getUTCMonth() + months,
+      value.getUTCDate(),
+    ),
+  );
+
+const startOfUtcDay = (value: Date | string | number) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+};
+
+const getPawnActiveUntilDate = (
+  pawn: Pawn,
+  itemOverdueThresholds: PawnItemOverdueThresholds,
+) => {
+  const threshold = itemOverdueThresholds[pawn.itemType] ?? { months: 0, days: 0 };
+  const start = startOfUtcDay(new Date(pawn.lastPaymentDate || pawn.createdAt));
+  const withMonths = addUtcMonths(start, Math.max(0, threshold.months));
+  return new Date(withMonths.getTime() + Math.max(0, threshold.days) * DAY_MS);
+};
 
 interface PawnTransaction {
   id: number;
@@ -159,8 +192,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onHeaderActionChange }) => {
   const [detailTx, setDetailTx] = useState<PawnTransaction[]>([]);
   const [detailTxLoading, setDetailTxLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [itemOverdueThresholds, setItemOverdueThresholds] =
+    useState<PawnItemOverdueThresholds>({});
   const businessDateYmd = useBusinessDate();
   const loadRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const syncThresholds = () => {
+      setItemOverdueThresholds(loadPawnItemOverdueThresholds(loadPawnItemTypes()));
+    };
+
+    syncThresholds();
+    window.addEventListener("pawn-item-types-updated", syncThresholds);
+    return () => {
+      window.removeEventListener("pawn-item-types-updated", syncThresholds);
+    };
+  }, []);
 
   useEffect(() => {
     if (!detailPawn) {
@@ -264,12 +311,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onHeaderActionChange }) => {
 
       const expiring = activePawns
         .map((p) => {
-          const created = new Date(p.createdAt);
-          const daysPassed = getCalendarDaysDue(
-            created,
+          const daysRemaining = getCalendarDaysDue(
             getCurrentBusinessDate(),
+            getPawnActiveUntilDate(p, itemOverdueThresholds),
           );
-          const daysRemaining = 90 - daysPassed;
 
           return {
             id: p.id,
@@ -311,7 +356,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onHeaderActionChange }) => {
         setLoading(false);
       }
     }
-  }, [businessDateYmd]);
+  }, [businessDateYmd, itemOverdueThresholds]);
 
   useEffect(() => {
     void loadDashboardData();

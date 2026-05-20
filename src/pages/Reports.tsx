@@ -47,6 +47,7 @@ import {
   getCurrentBusinessDate,
   setCurrentBusinessDateYmd,
   useBusinessDate,
+  useBusinessDateChangeEnabled,
 } from "../utils/businessDate";
 import {
   loadPawnItemOverdueThresholds,
@@ -182,6 +183,7 @@ const DetailField = ({
 const DailyReport = () => {
   const { t } = useTranslation();
   const selectedDate = useBusinessDate();
+  const businessDateChangeEnabled = useBusinessDateChangeEnabled();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [staffFilter, setStaffFilter] = useState("all");
@@ -419,6 +421,7 @@ const DailyReport = () => {
                 onChange={(e) => setCurrentBusinessDateYmd(e.target.value)}
                 className="w-[160px]"
                 monoDigits
+                disabled={!businessDateChangeEnabled}
               />
             </div>
           </div>

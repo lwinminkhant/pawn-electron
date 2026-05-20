@@ -4,6 +4,7 @@ const ITEM_TYPES_STORAGE_KEY = "pawnItemTypes";
 const ITEM_DESCRIPTION_PRESETS_STORAGE_KEY = "pawnItemDescriptionPresets";
 const ITEM_OVERDUE_THRESHOLDS_STORAGE_KEY = "pawnItemOverdueThresholds";
 const CURRENT_EMPLOYEE_ID_KEY = "pawnCurrentEmployeeId";
+const AUTH_STORAGE_KEY = "pawnAuthUser";
 
 export type PawnItemDescriptionPresets = Record<string, string[]>;
 export type PawnItemOverdueThreshold = {
@@ -15,7 +16,18 @@ export type PawnItemOverdueThresholds = Record<string, PawnItemOverdueThreshold>
 export const getCurrentPawnEmployeeId = (): string | null => {
   const raw = window.sessionStorage.getItem(CURRENT_EMPLOYEE_ID_KEY);
   const trimmed = raw?.trim();
-  return trimmed ? trimmed : null;
+  if (trimmed) return trimmed;
+
+  try {
+    const persistedAuth = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!persistedAuth) return null;
+    const parsed = JSON.parse(persistedAuth) as { id?: string | number } | null;
+    const persistedId =
+      parsed?.id == null ? "" : String(parsed.id).trim();
+    return persistedId || null;
+  } catch {
+    return null;
+  }
 };
 
 const getItemDescriptionPresetsStorageKey = (): string => {

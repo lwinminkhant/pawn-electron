@@ -113,6 +113,15 @@ const getTimeZoneYmd = (value: Date, timeZone = getDatabaseSessionTimeZone()) =>
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+const getDatabaseCurrentDateYmd = async () => {
+    const rows = await db.execute(sql`select current_date::text as ymd`);
+    if (Array.isArray(rows)) {
+        const value = String(rows[0]?.ymd || '').trim();
+        if (BUSINESS_DATE_PATTERN.test(value)) return value;
+    }
+    return getTimeZoneYmd(new Date(), getDatabaseSessionTimeZone());
+};
+
 const getExistingPawnCountForDate = async (
     currentDate: Date,
     executor: any = db,
@@ -2231,6 +2240,7 @@ app.get('/settings/db-timezone', async (_req, res) => {
     try {
         const configuredRow = await db.select().from(settings).where(eq(settings.key, DB_TIMEZONE_KEY)).limit(1);
         const currentSettingRows = await db.execute(sql`select current_setting('TIMEZONE') as timezone`);
+        const currentDateYmd = await getDatabaseCurrentDateYmd();
         const currentTimeZone =
             Array.isArray(currentSettingRows)
                 ? String(currentSettingRows[0]?.timezone || getDatabaseSessionTimeZone())
@@ -2241,6 +2251,7 @@ app.get('/settings/db-timezone', async (_req, res) => {
             dbTimeZone: {
                 configured: configuredRow[0]?.value || currentTimeZone,
                 active: currentTimeZone,
+                currentDateYmd,
             },
         });
     } catch (error) {
@@ -2290,6 +2301,7 @@ app.get('/settings/app', async (_req, res) => {
 
         const dbTimeZoneRows = await db.select().from(settings).where(eq(settings.key, DB_TIMEZONE_KEY)).limit(1);
         const currentTimeZoneRows = await db.execute(sql`select current_setting('TIMEZONE') as timezone`);
+        const currentDateYmd = await getDatabaseCurrentDateYmd();
         const activeTimeZone =
             Array.isArray(currentTimeZoneRows)
                 ? String(currentTimeZoneRows[0]?.timezone || getDatabaseSessionTimeZone())
@@ -2300,6 +2312,7 @@ app.get('/settings/app', async (_req, res) => {
             settings: {
                 ...(appSettings && typeof appSettings === 'object' ? appSettings : {}),
                 dbTimeZone: dbTimeZoneRows[0]?.value || activeTimeZone,
+                dbCurrentDateYmd: currentDateYmd,
             },
         });
     } catch (error) {

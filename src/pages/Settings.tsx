@@ -92,6 +92,8 @@ const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
   const [ticketCameraId, setTicketCameraId] = useState("");
   const [cameraLoading, setCameraLoading] = useState(false);
   const [dbTimeZone, setDbTimeZone] = useState("UTC");
+  const [businessDateChangeEnabled, setBusinessDateChangeEnabled] =
+    useState(true);
 
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{
@@ -116,6 +118,7 @@ const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
         setInterestTiersByItemType(normalized.interestTiersByItemType);
         setItemDescriptionPresets(normalized.itemDescriptionPresets);
         setItemOverdueThresholds(normalized.itemOverdueThresholds);
+        setBusinessDateChangeEnabled(normalized.businessDateChangeEnabled);
         setFaceCameraId(normalized.faceCameraId || getStoredCameraId("face") || "");
         setTicketCameraId(
           normalized.ticketCameraId || getStoredCameraId("ticket") || "",
@@ -213,6 +216,7 @@ const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
         itemTypes,
         itemDescriptionPresets,
         itemOverdueThresholds,
+        businessDateChangeEnabled,
         faceCameraId,
         ticketCameraId,
         dbTimeZone,
@@ -243,6 +247,7 @@ const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
       setInterestTiersByItemType(savedSettings.interestTiersByItemType);
       setItemDescriptionPresets(savedSettings.itemDescriptionPresets);
       setItemOverdueThresholds(savedSettings.itemOverdueThresholds);
+      setBusinessDateChangeEnabled(savedSettings.businessDateChangeEnabled);
       setDbTimeZone(savedSettings.dbTimeZone);
       setMessage({ type: "success", text: t('pages.settings.settingsSavedSuccessfully') });
       setTimeout(() => setMessage(null), 3000);
@@ -594,6 +599,40 @@ const Settings: React.FC<SettingsProps> = ({ onHeaderActionChange }) => {
                 </div>
               ))}
             </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Clock3 size={14} className="text-[var(--brass)]" aria-hidden />
+              <div>
+                <h3 className="text-[14px] font-semibold tracking-tight">
+                  {t('pages.settings.businessDateControl')}
+                </h3>
+                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
+                  {t('pages.settings.businessDateControlDesc')}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <label className="flex items-start gap-3 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-canvas)] p-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={businessDateChangeEnabled}
+                onChange={(e) => setBusinessDateChangeEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-[var(--hairline-strong)] text-[var(--brass)] focus:ring-[var(--brass-soft)]"
+              />
+              <div>
+                <p className="text-[13px] font-medium text-[var(--text-primary)]">
+                  {t('pages.settings.allowBusinessDateChange')}
+                </p>
+                <p className="text-[12px] text-[var(--text-muted)] mt-1">
+                  {t('pages.settings.allowBusinessDateChangeHint')}
+                </p>
+              </div>
+            </label>
           </CardBody>
         </Card>
 

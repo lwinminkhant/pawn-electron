@@ -7,6 +7,7 @@ import {
   type PawnItemDescriptionPresets,
   type PawnItemOverdueThresholds,
 } from "./itemTypes";
+import { setBusinessDateChangeEnabled } from "./businessDate";
 import { setConfiguredDbTimeZone } from "./timeZone";
 
 const INTEREST_TIERS_KEY = "interestTiers";
@@ -36,6 +37,7 @@ export type AppSettingsPayload = {
   itemTypes: string[];
   itemDescriptionPresets: PawnItemDescriptionPresets;
   itemOverdueThresholds: PawnItemOverdueThresholds;
+  businessDateChangeEnabled: boolean;
   faceCameraId: string;
   ticketCameraId: string;
   dbTimeZone: string;
@@ -64,6 +66,7 @@ export const DEFAULT_APP_SETTINGS: AppSettingsPayload = {
     {},
     DEFAULT_PAWN_ITEM_TYPES,
   ),
+  businessDateChangeEnabled: true,
   faceCameraId: "",
   ticketCameraId: "",
   dbTimeZone: "UTC",
@@ -131,6 +134,20 @@ const normalizeInterestTiersByItemType = (
 const normalizeString = (value: unknown, fallback = "") =>
   typeof value === "string" ? value : fallback;
 
+const normalizeBoolean = (value: unknown, fallback: boolean) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return fallback;
+};
+
 export const normalizeAppSettings = (
   value: unknown,
 ): AppSettingsPayload => {
@@ -174,6 +191,10 @@ export const normalizeAppSettings = (
       raw.itemOverdueThresholds,
       itemTypes,
     ),
+    businessDateChangeEnabled: normalizeBoolean(
+      raw.businessDateChangeEnabled,
+      DEFAULT_APP_SETTINGS.businessDateChangeEnabled,
+    ),
     faceCameraId: normalizeString(raw.faceCameraId),
     ticketCameraId: normalizeString(raw.ticketCameraId),
     dbTimeZone: normalizeString(raw.dbTimeZone, DEFAULT_APP_SETTINGS.dbTimeZone),
@@ -204,6 +225,7 @@ export const syncAppSettingsToLocalCache = (settings: AppSettingsPayload) => {
     ITEM_OVERDUE_THRESHOLDS_KEY,
     JSON.stringify(settings.itemOverdueThresholds),
   );
+  setBusinessDateChangeEnabled(settings.businessDateChangeEnabled);
 
   if (settings.faceCameraId) {
     window.localStorage.setItem(FACE_CAMERA_KEY, settings.faceCameraId);

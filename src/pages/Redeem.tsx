@@ -266,13 +266,15 @@ const Redeem: React.FC = () => {
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-[15px] font-semibold tracking-tight">
-                    {t('pages.redeem.selectedTickets')}
-                  </h3>
-                  <p className="text-[12px] text-[var(--text-muted)] mt-1">
-                    {rows.length} {t('pages.redeem.ticketsReady')}
-                  </p>
-                </div>
+                    <h3 className="text-[15px] font-semibold tracking-tight">
+                      {t('pages.redeem.selectedTickets')}
+                    </h3>
+                    <p className="text-[12px] text-[var(--text-muted)] mt-1">
+                      {rows.length === 1
+                        ? `1 ${t('pages.redeem.ticketReadySingle')}`
+                        : t('pages.redeem.ticketsReady', { count: rows.length })}
+                    </p>
+                  </div>
                 <Button
                   type="button"
                   variant="ghost"
