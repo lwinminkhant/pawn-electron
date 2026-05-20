@@ -62,8 +62,9 @@ export const calculateInterestByDays = (
     monthlyRatePercent: number,
     days: number,
 ): number => {
-    const daily = (Number(loanAmount) || 0) * ((Number(monthlyRatePercent) || 0) / 100) / 30;
-    return Math.max(0, Math.round(daily * Math.max(0, days)));
+    if (days <= 0) return 0;
+    const monthlyInterest = (Number(loanAmount) || 0) * ((Number(monthlyRatePercent) || 0) / 100);
+    return Math.max(0, Math.round((monthlyInterest / 30) * days));
 };
 
 const startOfUtcDay = (value: Date | string | number) => {
@@ -99,20 +100,42 @@ const getElapsedMonthsAndDays = (
     return { months, days };
 };
 
+export const calculateInterestAmountForPeriod = (
+    principal: number,
+    interestRate: number,
+    from: Date | string | number,
+    to: Date | string | number,
+) => {
+    const { months, days } = getElapsedMonthsAndDays(from, to);
+    if (months <= 0 && days <= 0) return 0;
+    const monthlyInterest = (Number(principal) || 0) * ((Number(interestRate) || 0) / 100);
+    return Math.round(monthlyInterest * months + (monthlyInterest / 30) * days);
+};
+
+export const addCalendarDays = (
+    from: Date | string | number,
+    days: number,
+) => {
+    const base = new Date(from);
+    if (Number.isNaN(base.getTime())) return new Date();
+    const next = new Date(base);
+    next.setDate(next.getDate() + Math.max(0, Math.floor(days)));
+    return next;
+};
+
 export const calculateRedeemInterest = (
     loanAmount: number,
     monthlyRatePercent: number,
     lastPaymentDate?: Date | string | null,
     createdAt?: Date | string | null,
     now = new Date(),
+    hasPriorInterestPayment = Boolean(lastPaymentDate),
 ) => {
     const baseSource = lastPaymentDate || createdAt || now;
     const { months, days } = getElapsedMonthsAndDays(baseSource, now);
     const monthlyInterest = Math.round((Number(loanAmount) || 0) * ((Number(monthlyRatePercent) || 0) / 100));
-    const hasPriorInterestPayment = Boolean(lastPaymentDate);
 
     if (!hasPriorInterestPayment && months === 0) return monthlyInterest;
     if (months === 0 && days === 0) return monthlyInterest;
-
-    return Math.round(monthlyInterest * months + (monthlyInterest / 30) * days);
+    return calculateInterestAmountForPeriod(loanAmount, monthlyRatePercent, baseSource, now);
 };

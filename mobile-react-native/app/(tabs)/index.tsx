@@ -1,11 +1,10 @@
-import { PawnListItem } from '@/components/PawnListItem';
-import { Button, Card, EmptyState, Loading, StatCard, Txt, useTheme } from '@/components/primitives';
-import { api, type PawnRow } from '@/lib/api';
+import { Card, Loading, StatCard, Txt, useTheme } from '@/components/primitives';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/format';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 type Summary = {
     totalActiveLoan?: number;
@@ -22,7 +21,6 @@ export default function DashboardScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [summary, setSummary] = useState<Summary>({});
-    const [recentPawns, setRecentPawns] = useState<PawnRow[]>([]);
     const [error, setError] = useState('');
 
     const load = useCallback(async () => {
@@ -45,13 +43,7 @@ export default function DashboardScreen() {
         }
 
         if (pawnsRes.success && Array.isArray(pawnsRes.pawns)) {
-            const sorted = [...pawnsRes.pawns].sort((a, b) => {
-                const ad = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                const bd = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                return bd - ad;
-            });
-            setRecentPawns(sorted.slice(0, 5));
-            next.activePawnCount = sorted.length;
+            next.activePawnCount = pawnsRes.pawns.length;
         }
 
         if (customersRes.success && Array.isArray(customersRes.customers)) {
@@ -100,7 +92,7 @@ export default function DashboardScreen() {
             {error ? (
                 <Card>
                     <Txt color="error">{error}</Txt>
-                    <Button label="Retry" variant="secondary" onPress={() => load()} />
+                    <ActionListItem label="Retry" onPress={() => load()} />
                 </Card>
             ) : null}
 
@@ -113,44 +105,51 @@ export default function DashboardScreen() {
                 <StatCard label="Customers" value={summary.customerCount ?? 0} />
             </View>
 
-            <Card title="Quick actions">
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
-                    <Button label="New pawn" onPress={() => router.push('/pawn/new')} />
-                    <Button label="View pawns" variant="secondary" onPress={() => router.push('/(tabs)/pawns')} />
-                    <Button label="Reports" variant="secondary" onPress={() => router.push('/(tabs)/reports')} />
-                </View>
+            <Card title="Quick actions" padded={false}>
+                <ActionListItem label="New pawn" onPress={() => router.push('/pawn/new')} first />
+                <ActionListItem label="Interest" onPress={() => router.push('/interest')} />
+                <ActionListItem label="Redeem" onPress={() => router.push('/redeem')} />
+                <ActionListItem label="View pawns" onPress={() => router.push('/(tabs)/pawns')} />
+                <ActionListItem label="Customers" onPress={() => router.push('/(tabs)/customers')} />
+                <ActionListItem label="Reports" onPress={() => router.push('/(tabs)/reports')} last />
             </Card>
-
-            <View style={{ gap: theme.spacing.sm }}>
-                <View
-                    style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                    }}
-                >
-                    <Txt variant="heading">Recent pawns</Txt>
-                    <Button
-                        label="See all"
-                        variant="ghost"
-                        size="sm"
-                        onPress={() => router.push('/(tabs)/pawns')}
-                    />
-                </View>
-                {recentPawns.length === 0 ? (
-                    <EmptyState title="No active pawns" hint="Create a new pawn to get started." />
-                ) : (
-                    recentPawns.map((p) => (
-                        <PawnListItem
-                            key={p.id}
-                            pawn={p}
-                            onPress={() =>
-                                router.push({ pathname: '/pawn/[id]', params: { id: String(p.id) } })
-                            }
-                        />
-                    ))
-                )}
-            </View>
         </ScrollView>
     );
 }
+
+const ActionListItem: React.FC<{
+    label: string;
+    onPress: () => void;
+    first?: boolean;
+    last?: boolean;
+}> = ({ label, onPress, first = false, last = false }) => {
+    const theme = useTheme();
+
+    return (
+        <Pressable
+            onPress={onPress}
+            style={({ pressed }) => ({
+                paddingHorizontal: theme.spacing.lg,
+                paddingVertical: 14,
+                borderTopLeftRadius: first ? theme.radius.lg : 0,
+                borderTopRightRadius: first ? theme.radius.lg : 0,
+                borderBottomLeftRadius: last ? theme.radius.lg : 0,
+                borderBottomRightRadius: last ? theme.radius.lg : 0,
+                borderBottomWidth: last ? 0 : 0.5,
+                borderBottomColor: theme.palette.border,
+                backgroundColor: pressed ? theme.palette.surfaceAlt : 'transparent',
+            })}
+        >
+            <View
+                style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                }}
+            >
+                <Txt variant="body" weight="500">{label}</Txt>
+                <Txt variant="body" color="muted" weight="600">›</Txt>
+            </View>
+        </Pressable>
+    );
+};

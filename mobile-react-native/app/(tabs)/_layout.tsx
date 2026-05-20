@@ -37,6 +37,7 @@ export default function TabsLayout() {
                 name="customers"
                 options={{
                     title: 'Customers',
+                    href: null,
                     tabBarIcon: ({ color }) => <IconSymbol name="person.2.fill" size={22} color={color} />,
                 }}
             />
@@ -44,6 +45,7 @@ export default function TabsLayout() {
                 name="reports"
                 options={{
                     title: 'Reports',
+                    href: null,
                     tabBarIcon: ({ color }) => <IconSymbol name="chart.bar.fill" size={22} color={color} />,
                 }}
             />

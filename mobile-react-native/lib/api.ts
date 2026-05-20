@@ -72,6 +72,9 @@ export const getDefaultApiBaseUrl = () => DEFAULT_BASE_URL;
 type AnyRecord = Record<string, unknown>;
 export type ApiResponse<T = AnyRecord> = T & { success: boolean; message?: string };
 
+const asRecord = (value: unknown): AnyRecord =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as AnyRecord) : {};
+
 const httpJson = async <T = AnyRecord>(
     path: string,
     init?: RequestInit,
@@ -134,6 +137,35 @@ export type PawnRow = {
     createdAt: string | null;
     lastPaymentDate: string | null;
     hasInterestPayments?: boolean;
+};
+
+export type SettlementPawn = {
+    id: number;
+    customerId: number;
+    customerName: string;
+    physicalNumber?: string | null;
+    storageLocation?: string;
+    sequence?: number;
+    item: {
+        type: string;
+        description: string;
+        photo?: string;
+        weight: number;
+        netWeight?: number;
+    };
+    loanAmount: number;
+    interestRate: number;
+    status: string;
+    createdAt: string;
+    lastPaymentDate?: string;
+    hasInterestPayments?: boolean;
+    daysDue?: number;
+    currentInterestDue?: number;
+    maxAvailableAmount?: number;
+    redeemedAt?: string;
+    redeemedInterest?: number;
+    redeemedPrincipal?: number;
+    note?: string | null;
 };
 
 export type Customer = {
@@ -223,6 +255,117 @@ export type CustomerPawn = {
     createdAt: string;
 };
 
+export type AppSettings = {
+    itemTypes?: string[];
+    interestTiers?: Array<{ minAmount: number; rate: number }>;
+    interestTiersByItemType?: Record<string, Array<{ minAmount: number; rate: number }>>;
+    goldRate?: string;
+    oneKyatInGrams?: string;
+    goldPricePerKyat?: string;
+};
+
+export type BatchInterestRequestItem = {
+    pawnId: number;
+    daysToPay: number;
+    amount: number;
+};
+
+export type BatchRedeemRequestItem = {
+    pawnId: number;
+    totalAmount: number;
+    discountAmount?: number;
+};
+
+export type BatchSettlementTicketResult = {
+    pawnId: number;
+    customerName: string;
+    principal: number;
+    interest: number;
+    discount: number;
+    total: number;
+    daysToPay?: number;
+    newLastPaymentDate?: string;
+    redeemedAt?: string;
+};
+
+export type BatchSettlementResult = {
+    success: boolean;
+    mode: 'interest' | 'redeem';
+    results: BatchSettlementTicketResult[];
+    totals: {
+        principal: number;
+        interest: number;
+        discount: number;
+        total: number;
+    };
+    message?: string;
+};
+
+const normalizeSettlementPawn = (value: unknown): SettlementPawn | undefined => {
+    const record = asRecord(value);
+    const itemRecord = asRecord(record.item);
+
+    const itemType =
+        typeof itemRecord.type === 'string'
+            ? itemRecord.type
+            : typeof record.itemType === 'string'
+            ? record.itemType
+            : '';
+    const itemDescription =
+        typeof itemRecord.description === 'string'
+            ? itemRecord.description
+            : typeof record.itemDescription === 'string'
+            ? record.itemDescription
+            : '';
+    const itemPhoto =
+        typeof itemRecord.photo === 'string'
+            ? itemRecord.photo
+            : typeof record.itemPhoto === 'string'
+            ? record.itemPhoto
+            : undefined;
+    const itemWeight =
+        typeof itemRecord.weight === 'number'
+            ? itemRecord.weight
+            : Number(record.weight ?? 0) || 0;
+    const itemNetWeight =
+        typeof itemRecord.netWeight === 'number'
+            ? itemRecord.netWeight
+            : record.netWeight == null
+            ? undefined
+            : Number(record.netWeight);
+
+    if (!itemType) return undefined;
+
+    return {
+        id: Number(record.id),
+        customerId: Number(record.customerId),
+        customerName: typeof record.customerName === 'string' ? record.customerName : '',
+        physicalNumber: typeof record.physicalNumber === 'string' ? record.physicalNumber : null,
+        storageLocation: typeof record.storageLocation === 'string' ? record.storageLocation : undefined,
+        sequence: record.sequence == null ? undefined : Number(record.sequence),
+        item: {
+            type: itemType,
+            description: itemDescription,
+            photo: itemPhoto,
+            weight: itemWeight,
+            netWeight: itemNetWeight,
+        },
+        loanAmount: Number(record.loanAmount ?? 0),
+        interestRate: Number(record.interestRate ?? 0),
+        status: typeof record.status === 'string' ? record.status : '',
+        createdAt: typeof record.createdAt === 'string' ? record.createdAt : '',
+        lastPaymentDate: typeof record.lastPaymentDate === 'string' ? record.lastPaymentDate : undefined,
+        hasInterestPayments: Boolean(record.hasInterestPayments),
+        daysDue: record.daysDue == null ? undefined : Number(record.daysDue),
+        currentInterestDue: record.currentInterestDue == null ? undefined : Number(record.currentInterestDue),
+        maxAvailableAmount: record.maxAvailableAmount == null ? undefined : Number(record.maxAvailableAmount),
+        redeemedAt: typeof record.redeemedAt === 'string' ? record.redeemedAt : undefined,
+        redeemedInterest: record.redeemedInterest == null ? undefined : Number(record.redeemedInterest),
+        redeemedPrincipal: record.redeemedPrincipal == null ? undefined : Number(record.redeemedPrincipal),
+        note: typeof record.note === 'string' ? record.note : null,
+    };
+};
+
 export const api = {
     client: {
         post: (path: string, body: any) => httpJson(path, { method: 'POST', body: JSON.stringify(body) }),
@@ -238,6 +381,22 @@ export const api = {
         list: (status?: PawnStatus) => {
             const q = status ? `?status=${encodeURIComponent(status)}` : '';
             return httpJson<{ pawns?: PawnRow[] }>(`/pawns${q}`);
+        },
+        get: async (pawnId: number, includeInactive = false) => {
+            const res = await httpJson<{ pawn?: unknown }>(
+                `/pawns/${pawnId}${includeInactive ? '?includeInactive=true' : ''}`,
+            );
+            if (!res.success || !res.pawn) {
+                return res as ApiResponse<{ pawn?: SettlementPawn }>;
+            }
+            const normalized = normalizeSettlementPawn(res.pawn);
+            if (!normalized) {
+                return {
+                    success: false,
+                    message: 'Invalid pawn payload',
+                } as ApiResponse<{ pawn?: SettlementPawn }>;
+            }
+            return { ...res, pawn: normalized } as ApiResponse<{ pawn?: SettlementPawn }>;
         },
         create: (payload: AnyRecord) =>
             httpJson<{ pawnId?: number }>('/pawns', {
@@ -262,6 +421,16 @@ export const api = {
             httpJson(`/pawns/${pawnId}/redeem`, {
                 method: 'POST',
                 body: JSON.stringify({ totalAmount, discountAmount }),
+            }),
+        batchPayInterest: (tickets: BatchInterestRequestItem[], employeeId?: number) =>
+            httpJson<BatchSettlementResult>('/pawns/batch/pay-interest', {
+                method: 'POST',
+                body: JSON.stringify({ tickets, employeeId }),
+            }),
+        batchRedeem: (tickets: BatchRedeemRequestItem[], employeeId?: number) =>
+            httpJson<BatchSettlementResult>('/pawns/batch/redeem', {
+                method: 'POST',
+                body: JSON.stringify({ tickets, employeeId }),
             }),
         transactions: (pawnId: number) =>
             httpJson<{ transactions?: CashTransaction[] }>(`/pawns/${pawnId}/transactions`),
@@ -314,6 +483,9 @@ export const api = {
     },
     storage: {
         info: () => httpJson<{ storageInfo?: StorageInfo }>('/storage/info'),
+    },
+    settings: {
+        getAppSettings: () => httpJson<{ settings?: AppSettings }>('/settings/app'),
     },
     health: () => httpJson('/health'),
 };

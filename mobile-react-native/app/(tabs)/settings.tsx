@@ -114,7 +114,7 @@ export default function SettingsScreen() {
 
             <Card title="About">
                 <KVRow label="App" value="Pawn Mobile" />
-                <KVRow label="Features" value="Pawns, payments, redeem, reports" last />
+                <KVRow label="Features" value="Pawns, batch interest, batch redeem, reports" last />
             </Card>
         </ScrollView>
     );

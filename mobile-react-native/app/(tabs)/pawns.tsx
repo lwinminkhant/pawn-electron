@@ -1,7 +1,7 @@
 import { PawnListItem } from '@/components/PawnListItem';
-import { Button, Chip, EmptyState, Input, Loading, Txt, useTheme } from '@/components/primitives';
+import { Chip, EmptyState, Input, Loading, useTheme } from '@/components/primitives';
 import { api, type PawnRow, type PawnStatus } from '@/lib/api';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 
@@ -13,7 +13,6 @@ const STATUS_OPTIONS: { label: string; value: PawnStatus }[] = [
 
 export default function PawnsScreen() {
     const theme = useTheme();
-    const router = useRouter();
     const [status, setStatus] = useState<PawnStatus>('PAWN');
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
@@ -50,9 +49,6 @@ export default function PawnsScreen() {
     return (
         <View style={{ flex: 1, backgroundColor: theme.palette.bg }}>
             <View style={{ padding: theme.spacing.lg, paddingBottom: theme.spacing.sm, gap: theme.spacing.sm }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-                    <Button label="New pawn" size="sm" onPress={() => router.push('/pawn/new')} />
-                </View>
                 <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
                     {STATUS_OPTIONS.map((opt) => (
                         <Chip

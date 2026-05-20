@@ -30,6 +30,8 @@ function AuthGate() {
         <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="login" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="interest" options={{ headerShown: true, title: 'Interest' }} />
+            <Stack.Screen name="redeem" options={{ headerShown: true, title: 'Redeem' }} />
             <Stack.Screen name="pawn/[id]" options={{ headerShown: true, title: 'Pawn' }} />
             <Stack.Screen
                 name="pawn/new"
